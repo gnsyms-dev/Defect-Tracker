@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "postgres-readonly": {
+      "command": "uvx",
+      "args": ["--with", "mcp<2", "postgres-mcp", "--access-mode=restricted"],
+      "env": {
+        "DATABASE_URI": "${POSTGRES_READONLY_URI}"
+      }
+    }
+  }
+}
