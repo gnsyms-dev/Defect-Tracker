@@ -1,0 +1,111 @@
+# One container per service: postgres, the NestJS backend, and the Vite dev server.
+# They share compose's default network, so each reaches the others by service name with no
+# host ports involved -- the backend connects to `postgres:5432`, and the frontend's dev
+# proxy forwards to `backend:5000`. Published ports exist only so a browser, psql or a
+# debugger on the host can reach in.
+#
+# Env comes from the single root .env, in two distinct ways:
+#   - compose interpolates ${VAR} below, to provision postgres and pick host ports;
+#   - `env_file:` hands the whole file to the backend container, so Nest reads its config
+#     off the container environment rather than off a file it has to find.
+# `environment:` entries then override the handful of values whose .env form is correct for
+# a host run but wrong inside this network. Each one is commented with why.
+
+name: defect-tracker
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      # Provisioned from the same three variables the backend connects with, so the
+      # database and its client can never disagree about credentials.
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Gates the backend's depends_on below. The postgres image runs initdb and then
+    # restarts the server on a container's first boot, so "the port is open" and "the
+    # database is ready" are genuinely different moments; without this the backend's first
+    # connection attempt loses that race.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  backend:
+    build:
+      context: ./app/backend
+      # `.dev`, because app/backend/Dockerfile is reserved for the production image this
+      # repo's project-structure convention describes but has not been written yet.
+      dockerfile: Dockerfile.dev
+    # No `restart:` on the app containers, deliberately. If the process dies because
+    # node_modules is stale or a config is wrong, a restart policy turns that into a
+    # crashloop that scrolls the real error out of the logs; failing once and staying
+    # down is how you actually find out what happened.
+    #
+    # PID 1 is tini, which reaps the children `npm run start:dev` fans out through
+    # concurrently and forwards SIGTERM to them, so `docker compose down` is quick.
+    init: true
+    env_file:
+      - .env
+    environment:
+      # Container override. .env says DB_HOST=localhost because that is right for running
+      # the backend on the host; inside this network the database answers to its service
+      # name. `environment:` wins over `env_file:`, which is what makes this work.
+      DB_HOST: postgres
+    ports:
+      - "${PORT:-5000}:${PORT:-5000}"
+      # The inspector, for attaching a debugger when the container is started with
+      # `npm run start:debug` instead of the image's default command.
+      - "${BACKEND_DEBUG_PORT:-9229}:9229"
+    volumes:
+      # Source is bind-mounted for hot reload. node_modules deliberately is NOT: the
+      # anonymous volume on the next line shadows whatever the host has at that path, so
+      # the container keeps the modules its own `npm ci` installed under its own Node and
+      # libc. Sharing them with the host is what the previous setup did, and it made every
+      # native addon a host-vs-container version gamble.
+      #
+      # Consequence worth knowing: that volume is filled from the image once, when the
+      # container is first created, and reused afterwards. After changing package.json,
+      # `make reinstall` (compose's --renew-anon-volumes) is what picks the new modules up.
+      - ./app/backend:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./app/frontend
+      dockerfile: Dockerfile.dev
+    init: true
+    environment:
+      # The only env this container gets, and it never reaches the browser bundle. Vite
+      # proxies /api server-side, from inside this container -- so the target has to be the
+      # backend's service name, not the localhost:5000 that vite.config.ts defaults to for
+      # host runs. Everything the browser needs falls back to its default in code.
+      VITE_API_PROXY_TARGET: http://backend:5000
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+      # `vite preview` serves the production build on its own port. Published because the
+      # service worker -- and therefore offline cold-load -- is disabled in dev and can
+      # only be exercised against a real build.
+      - "${FRONTEND_PREVIEW_PORT:-4173}:4173"
+    volumes:
+      # Same split as the backend: source bind-mounted, node_modules shadowed.
+      - ./app/frontend:/app
+      - /app/node_modules
+    # Ordering only, not readiness: Vite serves immediately and its proxy resolves
+    # `backend` per request, so a backend still booting costs one failed request, not a
+    # broken dev server.
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

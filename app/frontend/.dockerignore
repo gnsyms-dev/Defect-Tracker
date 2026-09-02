@@ -1,0 +1,17 @@
+# The build context is this directory (docker-compose.yml sets context: ./app/frontend),
+# so this file -- not the repo root -- is what Docker reads.
+
+# Installed inside the image by `npm ci`, against the container's own Node.
+node_modules
+
+# Build output and anything else regenerated inside the container.
+dist
+dist-ssr
+*.tsbuildinfo
+coverage
+*.log
+
+# The frontend takes no env file: VITE_API_PROXY_TARGET comes from compose's
+# `environment:` at runtime, and everything else falls back to its default in code.
+.env
+.env.*

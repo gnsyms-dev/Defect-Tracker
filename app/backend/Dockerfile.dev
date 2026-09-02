@@ -1,0 +1,32 @@
+# Development image for the NestJS backend, and only that. Dev dependencies stay in
+# because the watch pipeline needs tsc, tsc-alias, nodemon and concurrently at *runtime*,
+# and source is bind-mounted over /app by docker-compose.yml for hot reload -- so there is
+# nothing for a multi-stage "slim runtime" split to slim down. A production image is a
+# separate, later concern.
+#
+# Debian (glibc), not Alpine (musl): the backend test suite needs Node >= 24.9 for
+# require(ESM), and musl builds of native addons (pg's optional pg-native path, bcrypt if
+# it ever comes back) are the kind of failure that only shows up at runtime.
+FROM node:24-slim
+
+# WORKDIR creates /app owned by root. Hand it to the unprivileged `node` user (uid 1000,
+# matching the typical host dev user) *before* dropping privileges: npm needs to write
+# node_modules here, and the running app writes dist/ and logs/ straight into the
+# bind-mounted host tree -- as root those would land root-owned and break host tooling.
+WORKDIR /app
+RUN chown node:node /app
+USER node
+
+# Manifests first, so this layer and the install below rebuild only when a dependency
+# changes rather than on every source edit. `ci` not `install`: it installs exactly the
+# lockfile, and fails loudly if package.json and the lockfile have drifted apart.
+COPY --chown=node:node package.json package-lock.json ./
+RUN npm ci
+
+# Baked in so the image runs standalone; compose covers this with a bind mount at runtime.
+COPY --chown=node:node . .
+
+# 5000 the API, 9229 the inspector port that `npm run start:debug` binds.
+EXPOSE 5000 9229
+
+CMD ["npm", "run", "start:dev"]

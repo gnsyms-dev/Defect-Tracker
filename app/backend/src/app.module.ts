@@ -1,4 +1,4 @@
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
@@ -25,6 +25,17 @@ import { TelemetryModule } from '@config/telemetry/telemetry.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      // The repo keeps exactly one env file, at the root, two levels above this app.
+      // Two runtimes read it, differently and both correctly:
+      //   - on the host, npm scripts run with cwd=app/backend, so this resolves to the
+      //     root .env and ConfigModule loads it;
+      //   - in the container, cwd=/app and the app directory is all that was copied in,
+      //     so this path does not exist. ConfigModule skips a missing env file silently
+      //     and the config comes from the container environment, which compose fills from
+      //     that same root .env via `env_file:`.
+      // Either way process.env wins over the file, which is what lets docker-compose.yml
+      // override DB_HOST for container-to-container networking.
+      envFilePath: resolve(process.cwd(), '../../.env'),
       validate: validateEnv,
     }),
     TelemetryModule,

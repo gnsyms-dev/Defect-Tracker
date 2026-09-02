@@ -44,25 +44,30 @@ there are no dead-end "Forbidden" screens.
 
 - Docker + Docker Compose
 - `make`
-- Node ≥ 24.9 if you want to run the test suites on the host (see [Testing](#testing))
+
+That is the whole list. `node_modules` is installed inside each image and never shared
+with the host, so nothing here needs a particular Node version — or any Node at all.
+Install dependencies on the host only if you want editor autocomplete and in-IDE
+typechecking; the containers ignore whatever you do there.
 
 ## Setup
 
-1. **Create the backend env file.**
+1. **Create the env file.** There is exactly one, at the repo root.
 
    ```bash
-   cp app/backend/.env.example app/backend/.env
+   cp .env.example .env
    ```
 
-   Then set two values in `app/backend/.env`:
+   Then set **`JWT_SECRET`** — required, minimum 32 characters, **no default on purpose**.
+   The app refuses to boot without it rather than falling back to a weak key. Generate one:
 
-   - `DB_USERNAME` / `DB_PASSWORD` — `postgres` / `root` matches the bundled Postgres.
-   - **`JWT_SECRET`** — required, minimum 32 characters, **no default on purpose**. The
-     app refuses to boot without it rather than falling back to a weak key. Generate one:
+   ```bash
+   openssl rand -hex 32
+   ```
 
-     ```bash
-     node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
-     ```
+   Everything else is already filled in, including the database credentials — compose
+   provisions Postgres from the same `DB_USERNAME` / `DB_PASSWORD` / `DB_NAME` the backend
+   connects with, so the two cannot drift apart.
 
 2. **Start everything.**
 
@@ -70,17 +75,18 @@ there are no dead-end "Forbidden" screens.
    make up
    ```
 
-   First run installs `node_modules` for both apps via the container's own npm, so
-   native dependencies match the container. This takes a few minutes; later runs are fast.
+   Three containers come up: `postgres`, `backend`, `frontend`. The first run builds both
+   images and installs `node_modules` inside them, which takes a few minutes; later runs
+   are fast.
 
 3. **Create the schema and load demo data.**
 
    ```bash
-   cd app/backend
-   npm run migrate:up
-   npm run seed:up
+   make migrate
+   make seed
    ```
 
+   These run inside the backend container, which is where `sequelize-cli` lives.
    Migrations are deliberately decoupled from app startup — they never run on boot.
 
 ## URLs
@@ -88,6 +94,7 @@ there are no dead-end "Forbidden" screens.
 | | |
 |---|---|
 | Frontend | http://localhost:5173 |
+| Frontend, production build | http://localhost:4173 (after `make preview`) |
 | API | http://localhost:5000/api/v1 |
 | Swagger | http://localhost:5000/api/docs (click **Authorize** and paste a login token) |
 | Postgres | localhost:5432, database `defect_tracker` |
@@ -112,49 +119,51 @@ The seeder refuses to run when `NODE_ENV=production`.
 
 ## Commands
 
-Run from the repo root:
+Everything runs from the repo root — there is no longer a reason to `cd` into an app,
+because the tools live in the containers.
 
 | Command | What it does |
 |---|---|
-| `make up` | Build if needed, start backend + frontend, follow logs |
-| `make down` | Stop and remove containers, keep `node_modules` |
+| `make up` | Build if needed, start all three containers, follow logs |
+| `make down` | Stop and remove the containers (the database volume survives) |
 | `make restart` | `down` + `up` |
-| `make clean-start` | Wipe and reinstall `node_modules`, then `up` — **use after any `package.json` change** |
-| `make test` | Run the backend suite inside the container |
+| `make reinstall` | Rebuild images and refresh `node_modules` — **use after any `package.json` change** |
+| `make migrate` / `make migrate-down` / `make migrate-status` | Apply / revert / inspect migrations |
+| `make seed` / `make seed-down` | Load / remove demo data (idempotent — re-running `make seed` inserts nothing) |
+| `make test` / `make test-backend` / `make test-frontend` | Run the suites in their containers |
 | `make logs` / `make ps` | Follow logs / show container status |
+| `make sh-backend` / `sh-frontend` / `sh-db` | Shell into a container (`sh-db` opens `psql`) |
 
-From `app/backend`:
+**`make reinstall` is the one to remember.** `node_modules` lives in an anonymous volume
+that compose fills from the image once and then reuses, so rebuilding an image is not
+enough on its own — `reinstall` throws the stale volume away.
 
-| Command | What it does |
-|---|---|
-| `npm run migrate:up` / `migrate:down` / `migrate:status` | Apply / revert / inspect migrations |
-| `npm run migrate:down:all` | Revert everything (the quickest way to reset a dev database) |
-| `npm run seed:up` / `seed:down:all` | Load / remove demo data (idempotent — re-running `seed:up` inserts nothing) |
-| `npm test` | Unit tests |
+Anything not wrapped by a `make` target runs through the container directly, e.g.:
 
-From `app/frontend`:
-
-| Command | What it does |
-|---|---|
-| `npm run dev` | Vite dev server |
-| `npm run build` / `npm run preview` | Production build / serve it (this is how to exercise the service worker) |
-| `npm test` | Unit tests |
-| `npm run typecheck` / `npm run lint` | Typecheck / lint |
+```bash
+docker compose exec backend npm run lint
+docker compose exec frontend npm run typecheck
+docker compose exec backend npm run migrate:down:all   # quickest dev-database reset
+```
 
 ---
 
 ## Testing
 
 ```bash
-make test                                # backend, inside the container
-cd app/frontend && npm test              # frontend
+make test              # both suites
+make test-backend      # just the backend
+make test-frontend     # just the frontend
 ```
+
+Both run in their own container with `--no-deps`, so Postgres is not started: these are
+unit tests with the database mocked.
 
 **The backend suite needs Node ≥ 24.9 with `--experimental-vm-modules`.** The Nest 12
 packages ship ESM-only while the backend compiles to CommonJS, so Jest has to `require()`
 ESM natively — which is gated on `vm.SourceTextModule.prototype.hasAsyncGraph`. The flag
-is already in the npm scripts, and `make test` runs them in the container (Node 24), so
-this only matters if your host Node is older.
+is already in the npm scripts, and the container is on Node 24, so this is only a problem
+if you run the suite on a host with older Node.
 
 What the tests cover, and why those things:
 
@@ -227,11 +236,13 @@ dev on purpose (a stale SW is the top cause of "my change isn't showing up"), so
 page load with no network only works against a real build:
 
 ```bash
-cd app/frontend && npm run build && npm run preview
+make preview
 ```
 
-Then in DevTools → Offline, reload the page: the app shell boots from the service worker
-and your queued inspections are still there. Without a SW this is the browser's offline
+That builds inside the frontend container and serves the result on
+**http://localhost:4173** (the dev server keeps running on 5173). Then in DevTools →
+Offline, reload the page: the app shell boots from the service worker and your queued
+inspections are still there. Without a SW this is the browser's offline
 page and the app — along with the queue — is unreachable.
 
 ### Testing on a real phone
@@ -284,10 +295,15 @@ Each backend module follows the hexagonal layout documented in
 
 - **Migrations, not models, define the schema.** A `.model.ts` can be edited out of sync
   with what has actually been migrated.
-- **`node_modules` is bind-mounted** between host and container. The container runs
-  Node 24; if your host runs an older Node, install through `make clean-start` rather
-  than a host `npm i`, or native modules will mismatch. (Every dependency here is pure
-  JavaScript specifically to avoid that class of problem.)
+- **`node_modules` is never shared with the host.** Each image installs its own with
+  `npm ci`, and compose shadows the host directory at that path with an anonymous volume.
+  A host `npm i` therefore cannot reach in and break a container, and the container's
+  modules are always built against its own Node and libc. The cost is that a
+  `package.json` change needs `make reinstall`, not just `make restart`.
+- **Each app builds from its own context.** `app/backend/Dockerfile` and
+  `app/frontend/Dockerfile` are dev images — dev dependencies included, source
+  bind-mounted for hot reload. They are not production images and are not pretending to
+  be; building those is a separate job.
 - **The frontend talks to the API same-origin** through Vite's `/api` proxy in dev and
   preview. That is not just convenience: a CORS rejection is indistinguishable from being
   offline in JavaScript, so an absolute cross-origin URL would let a CORS

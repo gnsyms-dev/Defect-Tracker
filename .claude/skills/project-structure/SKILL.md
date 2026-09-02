@@ -51,7 +51,7 @@ Scaffolded with Vite's `react-ts` template. Feature code follows the Clean Archi
 
 ## Monorepo & deployment model
 
-*No Dockerfile or compose file exists in the repo yet as of 2026-09-01 — this section documents the deployment convention to follow when they're added, so new work stays consistent with it rather than inventing a different shape.*
+*The development side of this section is live in the repo as of 2026-09-02 (`app/backend/Dockerfile.dev`, `app/frontend/Dockerfile.dev`, root `docker-compose.yml`). The production side is still convention-only — no production Dockerfile exists yet — and is documented here so it gets built to this shape rather than a different one.*
 
 This is a **monorepo, not a shared build** — `app/backend/` and `app/frontend/` each own their full toolchain independently (own `package.json`, lockfile, `tsconfig*`, lint config). There is deliberately no root-level `package.json` installing or building across both apps, and no shared `node_modules`. The two apps are versioned together in one git history for convenience, but everything about how they're built, tested, and shipped stays per-app.
 
@@ -59,18 +59,20 @@ This is a **monorepo, not a shared build** — `app/backend/` and `app/frontend/
 
 ### Production — one container per app
 
-- **One Docker image per app.** `app/backend/Dockerfile` and `app/frontend/Dockerfile` (each not yet created) each use their own `app/<name>/` folder as the build context — never a single Dockerfile building both apps into one image. Coupling them into one build would force a frontend-only change to rebuild and redeploy the backend, and vice versa.
+- **One Docker image per app.** `app/backend/Dockerfile` and `app/frontend/Dockerfile` (each not yet created — the `.dev` files beside them are the development images, see below) each use their own `app/<name>/` folder as the build context — never a single Dockerfile building both apps into one image. Coupling them into one build would force a frontend-only change to rebuild and redeploy the backend, and vice versa.
 - **Multi-stage builds.** Each production Dockerfile should have a build stage (`npm ci`, `npm run build`) and a separate, slim runtime stage that copies in only the built output (`dist/` for the backend, the static build for the frontend) plus production `node_modules` — dev dependencies and build tooling never reach the runtime image.
 - **The backend runtime image excludes migration tooling.** `sequelize-cli`, `src/config/database/sql/migrations/`, `.sequelizerc`, and `src/config/database/sql/config/config.js` must never be copied into the backend's final image (see the Migrations section below for why) — that's dead weight and unnecessary attack surface in a container that never runs migrations itself.
 - **CI/CD builds and deploys each app's image independently**, keyed off changes under that app's own folder — a change under `app/frontend/` should never trigger a rebuild of the backend image or vice versa.
 
-### Development — a single combined container
+### Development — one container per app, same as production
 
-- **Backend and frontend run together in one container**, not as two separate containers the way production does. There's no local "backend container talks to frontend container" split to reproduce — dev is one process group (e.g. both apps started concurrently by a process manager or entrypoint script) inside a single image.
-- Because that image needs both `app/backend/` and `app/frontend/` as build context, its Dockerfile is a **root-level** file — e.g. `Dockerfile.dev` — not a third file inside either app folder, unlike the two production Dockerfiles which each only need their own app's folder.
-- It deliberately **skips production's multi-stage "slim runtime" split**: dev dependencies stay in, source is expected to be mounted as a volume for hot-reload, and the image is optimized for fast iteration, not size. That divergence from the prod images' contents is intentional, not a shortcut to "fix later."
-- A local Postgres (and any other local-only service) is still wired up via a root-level `docker-compose.dev.yml` (or equivalent) — but the app side of that compose file is the single combined dev container above, not two separate per-app services the way a hypothetical prod compose file would be.
-- **Migrations stay decoupled from container startup in development too** — run manually via the `npm run migrate:*` scripts documented below, not auto-run when the dev container boots. This rule isn't a production-only concern; see the Migrations section below.
+- **Backend and frontend run as separate containers**, matching production's boundary rather than collapsing it. An earlier root-level `Dockerfile.dev` ran both in one process group; that was replaced on 2026-09-02 because it coupled two independent toolchains into one image and one restart, and because reproducing production's "one service, one container" split locally is worth more than the small convenience of a single image.
+- **Each app's dev image is `app/<name>/Dockerfile.dev`, built from that app's own folder as context** — the same context rule as the production images, and sitting beside them so `Dockerfile` stays free for production. A frontend dependency change rebuilds only the frontend image.
+- They deliberately **skip production's multi-stage "slim runtime" split**: dev dependencies stay in (the backend's watch pipeline needs `tsc`, `nodemon` and `concurrently` at runtime; the frontend's needs `vite`), source is bind-mounted for hot reload, and the images are optimized for fast iteration, not size. That divergence from the prod images is intentional, not a shortcut to "fix later."
+- **`node_modules` is installed inside each image and never shared with the host.** Compose bind-mounts the app's source but shadows `node_modules` with an anonymous volume, so a host `npm i` cannot reach into a container and the container's modules always match its own Node and libc. Consequence: a `package.json` change needs the anonymous volume renewed (`make reinstall`), not just a restart.
+- **Everything is wired up by a single root-level `docker-compose.yml`** — `postgres`, `backend`, `frontend` — on compose's default network, where each service reaches the others by service name. There is no separate `docker-compose.dev.yml`; this file *is* the dev stack.
+- **Env lives in exactly one file, the root `.env`.** Compose interpolates `${VAR}` from it for provisioning and port publishing, and passes the whole file to the backend container via `env_file:` so Nest reads its config off the container environment. `environment:` entries override only the values whose host-run form is wrong inside the network (`DB_HOST`, the frontend's proxy target). Per-app `.env` files are deliberately gone — two copies of the same variable is how they drift.
+- **Migrations stay decoupled from container startup in development too** — run manually (`make migrate`, which invokes the `npm run migrate:*` scripts inside the backend container), not auto-run when the container boots. This rule isn't a production-only concern; see the Migrations section below.
 
 ## Module folder structure (`src/modules/<module-name>/`)
 

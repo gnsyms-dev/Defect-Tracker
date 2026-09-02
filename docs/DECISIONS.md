@@ -316,12 +316,14 @@ scope: React's default escaping, no `dangerouslySetInnerHTML` anywhere, helmet, 
 bounded lifetime. Serving the app same-origin — which the dev proxy already does — is
 what would make httpOnly cookies viable as a v2 hardening.
 
-**`bcryptjs`, not `bcrypt` or `argon2`.** The constraint is the dev container:
-`Dockerfile.dev` runs `node:24-slim` while this host is on Node 22, and compose
-bind-mounts `node_modules` between them. A native addon built by a host `npm i` fails to
-load under the container's Node — and it fails *on the login path*, the worst place to
-discover it. `bcryptjs` is pure JavaScript, works unchanged in the CommonJS seeder via
-`require()`, and ~100ms per login is irrelevant for a handful of logins per shift.
+**`bcryptjs`, not `bcrypt` or `argon2`.** The original constraint was the dev container
+sharing `node_modules` with a host on a different Node, where a native addon built by a
+host `npm i` fails to load under the container's Node — *on the login path*, the worst
+place to discover it. Each container now installs its own `node_modules` and the host's is
+shadowed, so that specific trap is gone, but the choice stands on its own: `bcryptjs` is
+pure JavaScript, so it needs no toolchain in the image and no rebuild when the base image's
+Node or libc moves, it works unchanged in the CommonJS seeder via `require()`, and ~100ms
+per login is irrelevant for a handful of logins per shift.
 Rejected raw `crypto.scrypt` too: zero dependencies and genuinely strong, but it means
 hand-rolling salt generation, encoding and timing-safe comparison, and hand-rolled
 password crypto is where subtle bugs live.

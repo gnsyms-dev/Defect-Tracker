@@ -18,7 +18,7 @@
     "watch:alias": "tsc-alias -w -p tsconfig.build.json",
     "watch:i18n": "nodemon --watch src/i18n -e json --exec \"mkdir -p dist/i18n && cp -r src/i18n/. dist/i18n/\"",
     "watch:app": "nodemon --delay 1 --watch dist -e js --exec \"node --enable-source-maps dist/main.js\"",
-    "watch:app:debug": "nodemon --delay 1 --watch dist -e js --exec \"node --enable-source-maps --inspect dist/main.js\"",
+    "watch:app:debug": "nodemon --delay 1 --watch dist -e js --exec \"node --enable-source-maps --inspect=0.0.0.0:9229 dist/main.js\"",
     "lint": "eslint \"{src,test}/**/*.ts\"",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",

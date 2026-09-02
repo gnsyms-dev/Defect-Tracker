@@ -4,7 +4,22 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// The repo keeps exactly one env file, at the root. Pointing Vite there is what makes
+// VITE_* values in it reach the browser bundle on a host run; inside the container that
+// path does not exist, Vite finds no env file, and every value falls back to its default
+// in code -- which is the intended shape, since the frontend container is given no env
+// beyond the proxy target below.
+const rootEnvDir = fileURLToPath(new URL('../..', import.meta.url));
+
+// Resolved server-side, by the dev server process itself -- so it is process.env, not
+// import.meta.env, and it is never inlined into the bundle. On the host the backend is on
+// localhost; under compose the frontend is its own container, where localhost is itself,
+// so docker-compose.yml sets this to the backend's service name.
+const apiProxyTarget =
+  process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:5000';
+
 export default defineConfig({
+  envDir: rootEnvDir,
   plugins: [
     react(),
     tailwindcss(),
@@ -71,14 +86,13 @@ export default defineConfig({
     // Reachable from outside the dev container, and from a phone on the LAN.
     host: true,
     proxy: {
-      // Same-origin proxy rather than an absolute VITE_API_BASE_URL, for three
+      // Same-origin proxy rather than an absolute VITE_API_BASE_URL, for two
       // reasons: it removes CORS from the picture entirely (the backend's
       // `origin: ['*']` config was in fact broken, and a CORS rejection is
-      // indistinguishable from being offline in JS); dev runs both apps in one
-      // container so localhost:5000 is trivially correct; and testing on a real
-      // phone then needs zero per-device configuration.
+      // indistinguishable from being offline in JS); and testing on a real phone
+      // needs zero per-device configuration.
       '/api': {
-        target: 'http://localhost:5000',
+        target: apiProxyTarget,
         changeOrigin: true,
         // No rewrite: the backend already serves under /api/v1.
       },
@@ -87,7 +101,7 @@ export default defineConfig({
   preview: {
     host: true,
     proxy: {
-      '/api': { target: 'http://localhost:5000', changeOrigin: true },
+      '/api': { target: apiProxyTarget, changeOrigin: true },
     },
   },
 });

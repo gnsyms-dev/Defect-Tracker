@@ -1,0 +1,18 @@
+# The build context is this directory (docker-compose.yml sets context: ./app/backend),
+# so this file -- not the repo root -- is what Docker reads.
+
+# Installed inside the image by `npm ci`, against the container's own Node and libc.
+# Copying the host's would defeat the point and bloat the context by ~500MB.
+node_modules
+
+# Build output and anything else regenerated inside the container.
+dist
+*.tsbuildinfo
+coverage
+logs
+*.log
+
+# Env lives in the single root .env, injected at runtime via compose's env_file.
+# Nothing secret should ever be baked into an image layer.
+.env
+.env.*

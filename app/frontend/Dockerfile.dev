@@ -1,0 +1,29 @@
+# Development image for the Vite dev server: dev dependencies stay in (vite itself is one)
+# and source is bind-mounted over /app by docker-compose.yml for HMR, so there is nothing a
+# multi-stage "slim runtime" split would remove. It can also run `vite preview` on 4173 --
+# the only way to exercise the service worker, which the dev server disables -- but that is
+# still the dev toolchain serving a build, not a production image. Building one of those is
+# a separate, later concern.
+#
+# Same base as the backend so both containers run one Node version, and so the modules
+# installed below are built against the same libc.
+FROM node:24-slim
+
+# See app/backend/Dockerfile.dev: /app is handed to the unprivileged `node` user before the
+# install so that the container's writes into the bind-mounted host tree stay host-owned.
+WORKDIR /app
+RUN chown node:node /app
+USER node
+
+COPY --chown=node:node package.json package-lock.json ./
+RUN npm ci
+
+COPY --chown=node:node . .
+
+# 5173 the dev server, 4173 `vite preview`.
+EXPOSE 5173 4173
+
+# vite.config.ts already sets `server.host: true` (and the same for preview), so both bind
+# 0.0.0.0 and are reachable through the published ports -- and from a phone on the LAN --
+# without a flag here.
+CMD ["npm", "run", "dev"]

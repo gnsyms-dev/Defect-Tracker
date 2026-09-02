@@ -1,76 +1,118 @@
-COMPOSE_FILE := docker-compose.dev.yml
-COMPOSE := docker compose -f $(COMPOSE_FILE)
+COMPOSE := docker compose
 DETACH ?= 0
 SHELL := /bin/bash
 
-.PHONY: help up down restart clean install logs watch ps build test test-backend
+.PHONY: help up down restart reinstall logs watch ps build preview \
+        migrate migrate-down migrate-status seed seed-down \
+        test test-backend test-frontend sh-backend sh-frontend sh-db
 
 help:
-	@echo "make up       		- build (if needed) and start backend + frontend in the background"
-	@echo "make down     		- stop and remove the containers, keep node_modules"
-	@echo "make restart  		- down + up, keep node_modules"
-	@echo "make clean-start    	- down + wipe app/backend/node_modules + app/frontend/node_modules + reinstall + up"
-	@echo "make install  		- (re)install node_modules on the host via the container's npm"
-	@echo "make logs     		- follow container logs"
-	@echo "make ps       		- show container status"
-	@echo "make build   		- rebuild the image without starting containers"
-	@echo "make test    		- run the backend test suite inside the container"
+	@echo "make up            - build if needed and start postgres + backend + frontend"
+	@echo "make down          - stop and remove the containers (the database volume survives)"
+	@echo "make restart       - down + up"
+	@echo "make reinstall     - rebuild the images and refresh node_modules -- use after any package.json change"
 	@echo ""
-	@echo "make up/restart/clean-start automatically follow logs afterwards;"
-	@echo "Ctrl+C or Ctrl+Z there gracefully runs 'make down'."
-	@echo "Pass DETACH=1 to skip auto-logs, e.g. 'make up DETACH=1' (then use 'make logs' yourself)."
+	@echo "make migrate       - apply migrations (inside the backend container)"
+	@echo "make migrate-down  - revert the last migration"
+	@echo "make migrate-status- show which migrations have run"
+	@echo "make seed          - load demo data (idempotent)"
+	@echo "make seed-down     - remove demo data"
+	@echo ""
+	@echo "make test          - run both test suites in their containers"
+	@echo "make test-backend / test-frontend - run just one"
+	@echo "make logs / ps     - follow logs / show container status"
+	@echo "make build         - rebuild the images without starting anything"
+	@echo "make preview       - build the frontend and serve it on :4173 (the only way to exercise the service worker)"
+	@echo "make sh-backend / sh-frontend / sh-db - open a shell in a container"
+	@echo ""
+	@echo "up/restart/reinstall follow logs afterwards; Ctrl+C or Ctrl+Z there runs 'make down'."
+	@echo "Pass DETACH=1 to skip that, e.g. 'make up DETACH=1'."
 
 up:
-	@[ -d app/backend/node_modules ] && [ -d app/frontend/node_modules ] || $(MAKE) install
 	$(COMPOSE) up --build -d
-	@if [ "$(DETACH)" = "1" ]; then \
-		echo "Started in detached mode. Run 'make logs' to follow logs."; \
-	else \
-		$(MAKE) watch; \
-	fi
+	@$(MAKE) --no-print-directory follow
 
 down:
 	$(COMPOSE) down
 
 restart: down up
 
-clean-start:
-	$(COMPOSE) down
-	rm -rf app/backend/node_modules app/frontend/node_modules
-	$(MAKE) install
-	$(COMPOSE) up --build -d
-	@if [ "$(DETACH)" = "1" ]; then \
-		echo "Started in detached mode. Run 'make logs' to follow logs."; \
-	else \
-		$(MAKE) watch; \
-	fi
+# node_modules lives in an anonymous volume, which compose fills from the image once and
+# then keeps reusing -- so a rebuilt image alone does NOT update it. --renew-anon-volumes
+# throws the old one away so the new image's modules are picked up. This is the target to
+# run after editing either package.json.
+reinstall:
+	$(COMPOSE) up --build -d --renew-anon-volumes
+	@$(MAKE) --no-print-directory follow
 
-install:
+build:
 	$(COMPOSE) build
-	$(COMPOSE) run --rm app sh -c "npm --prefix app/backend install && npm --prefix app/frontend install"
+
+# The service worker is disabled in the dev server on purpose, so offline cold-load can
+# only be tested against a real build. Runs alongside the dev server, on its own port.
+preview:
+	$(COMPOSE) exec frontend sh -c 'npm run build && npm run preview'
 
 logs:
 	$(COMPOSE) logs -f
 
-# Follows logs after up/restart/clean-start; Ctrl+C or Ctrl+Z tears the stack
-# down gracefully instead of just detaching or suspending the log stream.
+ps:
+	$(COMPOSE) ps
+
+# ------------------------------------------------------------------------------
+# Database. Run inside the backend container on purpose: node_modules is no longer
+# installed on the host, so sequelize-cli only exists in there. The container's DB_HOST
+# is "postgres", so these reach the database over the compose network.
+# ------------------------------------------------------------------------------
+migrate:
+	$(COMPOSE) exec backend npm run migrate:up
+
+migrate-down:
+	$(COMPOSE) exec backend npm run migrate:down
+
+migrate-status:
+	$(COMPOSE) exec backend npm run migrate:status
+
+seed:
+	$(COMPOSE) exec backend npm run seed:up
+
+seed-down:
+	$(COMPOSE) exec backend npm run seed:down:all
+
+# ------------------------------------------------------------------------------
+# Tests. --no-deps keeps postgres out of it: both suites are unit tests with the database
+# mocked, so starting one would only slow them down.
+# ------------------------------------------------------------------------------
+test: test-backend test-frontend
+
+test-backend:
+	$(COMPOSE) run --rm --no-deps backend npm test
+
+test-frontend:
+	$(COMPOSE) run --rm --no-deps frontend npm test
+
+sh-backend:
+	$(COMPOSE) exec backend bash
+
+sh-frontend:
+	$(COMPOSE) exec frontend bash
+
+# The credentials come from the container's own POSTGRES_* vars, so this stays correct
+# even if .env changes them.
+sh-db:
+	$(COMPOSE) exec postgres sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
+
+# Follows logs after up/restart/reinstall; Ctrl+C or Ctrl+Z tears the stack down
+# gracefully instead of just detaching or suspending the log stream.
+follow:
+	@if [ "$(DETACH)" = "1" ]; then \
+		echo "Started in detached mode. Run 'make logs' to follow logs."; \
+	else \
+		$(MAKE) --no-print-directory watch; \
+	fi
+
 watch:
 	@trap 'echo; echo "Shutting down..."; kill -CONT $$LOGS_PID 2>/dev/null; kill $$LOGS_PID 2>/dev/null; wait $$LOGS_PID 2>/dev/null; $(COMPOSE) down; exit 0' INT TSTP; \
 	$(COMPOSE) logs -f & \
 	LOGS_PID=$$!; \
 	wait $$LOGS_PID
-
-ps:
-	$(COMPOSE) ps
-
-build:
-	$(COMPOSE) build
-
-# Tests run inside the container on purpose. The Nest 12 packages are ESM-only while
-# the backend compiles to CommonJS, so Jest has to require() ESM natively -- which
-# needs Node >= 24.9 plus --experimental-vm-modules. The container is node:24-slim;
-# a host on an older Node would fail with "Must use import to load ES Module".
-test: test-backend
-
-test-backend:
-	$(COMPOSE) run --rm --no-deps app sh -c "npm --prefix app/backend test"
