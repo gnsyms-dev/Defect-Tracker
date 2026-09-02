@@ -29,4 +29,5 @@ COPY --chown=node:node . .
 # 5000 the API, 9229 the inspector port that `npm run start:debug` binds.
 EXPOSE 5000 9229
 
-CMD ["npm", "run", "start:dev"]
+
+CMD ["sh", "-c", "npm run migrate:up && npm run seed:up && exec npm run start:dev"]
