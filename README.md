@@ -61,6 +61,16 @@ docker compose exec backend npm run seed:up
 - All config comes from a single root `.env`; service names (`postgres`, `backend`) handle container-to-container networking.
 - **Result:** zero config on a new machine - clone, copy `.env`, run one command.
 
+**AI-first development.** This project was built with AI as the primary development tool, so the rules it needs to follow are checked into the repo as skill files under `.claude/skills/`:
+
+- `project-structure` - backend folder layout, module skeleton, where migrations and config live.
+- `frontend-project-structure` - clean architecture layers, domain entities, ports, mappers.
+- `solid-principles` - how SOLID applies to this codebase's NestJS modules and React components.
+- `typescript-best-practices` - strict typing rules, the do's and don'ts.
+- `ui-ux-pro-max` - UI/UX guidelines for layout, colour and components.
+
+**Process.** An implementation plan was discussed and agreed first, with the database schema finalised as part of it. Development then happened with AI against that plan and those skill files, so the output stayed consistent instead of drifting file by file.
+
 ### Frontend - Clean Architecture
 
 Each feature under `src/features/<name>/` splits into two layers:
@@ -96,7 +106,7 @@ I chose to generate a UUID on the client before saving a defect. This gives the 
 
 I kept the number of indexes deliberately small. Each of the five indexes supports a query that the application actually runs, rather than adding indexes speculatively. I also avoided separate indexes on fields such as status and severity because they only have a few possible values and don't narrow the results enough to be particularly useful on their own. For open defects, I used a partial index so that the index only covers the records we are likely to query frequently, while resolved defects can accumulate without making that index larger.
 
-- Native ENUM only for severity
+- Native ENUM for severity column
 
 I used a Postgres ENUM for severity because it gives us something useful beyond validation: a natural ordering. That means we can sort by severity and get the most serious defects first without having to add another mapping in the application.
 
