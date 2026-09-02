@@ -2,9 +2,9 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "target": "es2023",
-    "lib": ["ES2023", "DOM"],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "esnext",
-    "types": ["vite/client"],
+    "types": ["vite/client", "vite-plugin-pwa/client"],
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
 
@@ -16,11 +16,25 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Linting */
+    /* Path alias. Mirrored by resolve.alias in vite.config.ts -- both are needed:
+       TypeScript uses this for checking, Vite uses its own for bundling.
+       No `baseUrl`: it is deprecated in TypeScript 6, and with
+       moduleResolution "bundler" these paths already resolve relative to this file. */
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
+    /* Linting.
+       `strict` was absent from all three tsconfigs even though the repo's own
+       typescript-best-practices skill mandates it. Turning it on now costs nothing
+       because no application code existed yet; retrofitting it later would be
+       unpayable. */
+    "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true
   },
   "include": ["src"]
 }

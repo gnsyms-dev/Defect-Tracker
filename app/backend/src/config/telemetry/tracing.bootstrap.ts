@@ -31,7 +31,7 @@ class NoopSpanExporter implements SpanExporter {
 
 const isTracingEnabled = process.env.OTEL_ENABLED !== 'false';
 const exporterType = process.env.OTEL_EXPORTER_TYPE ?? 'none';
-const serviceName = process.env.OTEL_SERVICE_NAME ?? 'hakka-backend';
+const serviceName = process.env.OTEL_SERVICE_NAME ?? 'defect-tracker-backend';
 
 const traceExporter =
   exporterType === 'otlp'

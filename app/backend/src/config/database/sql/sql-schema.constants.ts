@@ -1,6 +1,5 @@
 export const SqlSchema = {
-  Hakka: 'hakka',
-  MlForecasts: 'ml_forecasts',
+  App: 'app',
 } as const;
 
 export type SqlSchema = (typeof SqlSchema)[keyof typeof SqlSchema];

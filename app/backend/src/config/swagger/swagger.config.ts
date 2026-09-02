@@ -14,9 +14,15 @@ export function setupSwagger(
   }
 
   const documentConfig = new DocumentBuilder()
-    .setTitle('Hakka API')
-    .setDescription('API documentation for the Hakka backend')
+    .setTitle('Defect Tracker API')
+    .setDescription('Quality Inspection Tracker API')
     .setVersion('1.0')
+    // Without this, /api/docs can only exercise POST /auth/login -- every other
+    // endpoint 401s with no way to supply the token from the Swagger UI.
+    .addBearerAuth(
+      { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+      'bearer',
+    )
     .addGlobalParameters({
       name: 'Accept-Language',
       in: 'header',

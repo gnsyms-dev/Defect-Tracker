@@ -26,7 +26,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: root
-      POSTGRES_DB: hakka
+      POSTGRES_DB: defect_tracker
     volumes:
       - postgres_data:/var/lib/postgresql/data
 

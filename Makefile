@@ -3,7 +3,7 @@ COMPOSE := docker compose -f $(COMPOSE_FILE)
 DETACH ?= 0
 SHELL := /bin/bash
 
-.PHONY: help up down restart clean install logs watch ps build
+.PHONY: help up down restart clean install logs watch ps build test test-backend
 
 help:
 	@echo "make up       		- build (if needed) and start backend + frontend in the background"
@@ -14,6 +14,7 @@ help:
 	@echo "make logs     		- follow container logs"
 	@echo "make ps       		- show container status"
 	@echo "make build   		- rebuild the image without starting containers"
+	@echo "make test    		- run the backend test suite inside the container"
 	@echo ""
 	@echo "make up/restart/clean-start automatically follow logs afterwards;"
 	@echo "Ctrl+C or Ctrl+Z there gracefully runs 'make down'."
@@ -64,3 +65,12 @@ ps:
 
 build:
 	$(COMPOSE) build
+
+# Tests run inside the container on purpose. The Nest 12 packages are ESM-only while
+# the backend compiles to CommonJS, so Jest has to require() ESM natively -- which
+# needs Node >= 24.9 plus --experimental-vm-modules. The container is node:24-slim;
+# a host on an older Node would fail with "Must use import to load ES Module".
+test: test-backend
+
+test-backend:
+	$(COMPOSE) run --rm --no-deps app sh -c "npm --prefix app/backend test"

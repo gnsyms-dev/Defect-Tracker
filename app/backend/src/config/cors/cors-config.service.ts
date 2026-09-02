@@ -15,7 +15,7 @@ export class CorsConfigService {
 
   getCorsConfig(): CorsOptions {
     return {
-      origin: this.splitAndTrim(
+      origin: this.parseOrigin(
         this.configService.get('CORS_ALLOWED_ORIGINS', { infer: true }),
       ),
       methods: this.splitAndTrim(
@@ -29,6 +29,18 @@ export class CorsConfigService {
       }),
       exposedHeaders: ['Content-Disposition'],
     };
+  }
+
+  // The `cors` package only takes its "allow any origin" shortcut when `origin` is
+  // the bare string '*'. Handing it ['*'] instead falls through to exact-string
+  // matching, which never matches a real Origin header, so the
+  // Access-Control-Allow-Origin header is omitted and every browser call is blocked.
+  // Worse, the browser reports that as a `TypeError` from fetch() -- indistinguishable
+  // from being offline -- so a client with offline queueing would silently queue
+  // everything instead of surfacing a CORS error.
+  private parseOrigin(value: string): string | string[] {
+    const trimmed = value.trim();
+    return trimmed === '*' ? '*' : this.splitAndTrim(trimmed);
   }
 
   private splitAndTrim(value: string): string[] {

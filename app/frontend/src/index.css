@@ -1,111 +1,140 @@
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+@import 'tailwindcss';
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+/*
+ * Design tokens.
+ *
+ * Tailwind v4's @theme emits real CSS custom properties, so these stay usable from
+ * plain CSS as well as from utility classes -- which is what makes adopting Tailwind
+ * additive here rather than a replacement for the boilerplate's CSS-variable
+ * approach.
+ */
+@theme {
+  /* Surfaces */
+  --color-bg: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f1f5f9;
+  --color-border: #e2e8f0;
+  --color-text: #0f172a;
+  --color-text-muted: #64748b;
+  --color-accent: #0f172a;
+  --color-accent-fg: #ffffff;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  /* Severity. Deliberately red / amber / slate-blue and NOT red/amber/green:
+     green must mean "Resolved" and nothing else, so severity may never use it. */
+  --color-critical: #dc2626;
+  --color-critical-bg: #fef2f2;
+  --color-major: #d97706;
+  --color-major-bg: #fffbeb;
+  --color-minor: #475569;
+  --color-minor-bg: #f1f5f9;
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  /* Status */
+  --color-open: #b45309;
+  --color-open-bg: #fef3c7;
+  --color-resolved: #15803d;
+  --color-resolved-bg: #f0fdf4;
+
+  /* Connectivity / sync states */
+  --color-offline: #475569;
+  --color-offline-bg: #e2e8f0;
+  --color-pending: #b45309;
+  --color-pending-bg: #fef3c7;
+  --color-danger: #dc2626;
+  --color-danger-bg: #fef2f2;
+
+  /* 44px as a named token, so tap-target sizing is never a magic number. */
+  --spacing-tap: 2.75rem;
+
+  --radius-card: 0.75rem;
+  --radius-control: 0.625rem;
+
+  --font-sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
+  @theme {
+    --color-bg: #0b1120;
+    --color-surface: #16202f;
+    --color-surface-muted: #1e293b;
+    --color-border: #2e3b4f;
+    --color-text: #e8edf5;
+    --color-text-muted: #94a3b8;
+    --color-accent: #e8edf5;
+    --color-accent-fg: #0b1120;
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+    /* Lightened for contrast on a dark ground -- the reason severity colours are
+       tokens rather than inline hex values. */
+    --color-critical: #f87171;
+    --color-critical-bg: #40181b;
+    --color-major: #fbbf24;
+    --color-major-bg: #402f11;
+    --color-minor: #94a3b8;
+    --color-minor-bg: #1e293b;
+
+    --color-open: #fbbf24;
+    --color-open-bg: #402f11;
+    --color-resolved: #4ade80;
+    --color-resolved-bg: #10301c;
+
+    --color-offline: #cbd5e1;
+    --color-offline-bg: #1e293b;
+    --color-pending: #fbbf24;
+    --color-pending-bg: #402f11;
+    --color-danger: #f87171;
+    --color-danger-bg: #40181b;
   }
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
+:root {
+  color-scheme: light dark;
+  /* 16px base, NOT the boilerplate's 18px. Two reasons: 18px wastes horizontal
+     room at 390px, and any input rendering below 16px makes iOS Safari zoom the
+     whole page on focus, which looks like a broken layout mid-form. */
+  font: 16px/1.5 var(--font-sans);
+  color: var(--color-text);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 body {
   margin: 0;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+#root {
+  /* The Vite template pinned this to width: 1126px with text-align: center and a
+     border-inline -- a desktop-fixed, centred shell, which is the opposite of what
+     a mobile-first app needs.
+     dvh rather than svh: with a fixed bottom tab bar, svh leaves a visible gap as
+     the browser chrome collapses on scroll. */
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
+/* Kill the 300ms tap delay and the grey flash on touch devices. */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a,
+label,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+/* Respect the OS setting -- relevant for the offline banner and sync spinners. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
 }

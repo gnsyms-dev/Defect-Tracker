@@ -10,6 +10,8 @@ import {
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from '@modules/auth/auth.module';
+import { InspectionsModule } from '@modules/inspections/inspections.module';
+import { PlantsModule } from '@modules/plants/plants.module';
 import { GlobalExceptionFilter } from '@shared/filters/global-exception.filter';
 import { LoggingInterceptor } from '@shared/interceptors/logging.interceptor';
 import { CorsModule } from '@config/cors/cors.module';
@@ -29,7 +31,9 @@ import { TelemetryModule } from '@config/telemetry/telemetry.module';
     LoggerModule,
     CorsModule,
     DatabaseModule,
+    PlantsModule,
     AuthModule,
+    InspectionsModule,
     I18nModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (

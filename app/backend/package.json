@@ -20,23 +20,27 @@
     "watch:app": "nodemon --delay 1 --watch dist -e js --exec \"node --enable-source-maps dist/main.js\"",
     "watch:app:debug": "nodemon --delay 1 --watch dist -e js --exec \"node --enable-source-maps --inspect dist/main.js\"",
     "lint": "eslint \"{src,test}/**/*.ts\"",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:cov": "jest --coverage",
-    "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
+    "test:cov": "NODE_OPTIONS=--experimental-vm-modules jest --coverage",
+    "test:debug": "NODE_OPTIONS=--experimental-vm-modules node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
+    "test:e2e": "NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-e2e.json",
     "migrate:generate": "sequelize-cli migration:generate --name",
     "seeder:generate": "sequelize-cli seed:generate --name",
     "migrate:up": "sequelize-cli db:migrate",
     "migrate:down": "sequelize-cli db:migrate:undo",
     "migrate:down:all": "sequelize-cli db:migrate:undo:all",
-    "migrate:status": "sequelize-cli db:migrate:status"
+    "migrate:status": "sequelize-cli db:migrate:status",
+    "seed:up": "sequelize-cli db:seed:all",
+    "seed:down": "sequelize-cli db:seed:undo",
+    "seed:down:all": "sequelize-cli db:seed:undo:all"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",
     "@nestjs/config": "^12.0.0",
     "@nestjs/core": "^12.0.1",
     "@nestjs/cqrs": "^12.0.0",
+    "@nestjs/jwt": "^12.0.0",
     "@nestjs/platform-express": "^12.0.1",
     "@nestjs/sequelize": "^12.0.0",
     "@nestjs/swagger": "^12.0.1",
@@ -49,6 +53,7 @@
     "@opentelemetry/sdk-node": "^0.221.0",
     "@opentelemetry/sdk-trace-node": "^2.10.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
+    "bcryptjs": "^3.0.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "dotenv": "^17.4.2",
@@ -91,5 +96,8 @@
     "tsconfig-paths": "^4.2.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.69.0"
+  },
+  "engines": {
+    "node": ">=24.9.0"
   }
 }

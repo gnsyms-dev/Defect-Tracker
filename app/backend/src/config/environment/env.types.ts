@@ -9,6 +9,7 @@ import {
   Matches,
   Max,
   Min,
+  MinLength,
 } from 'class-validator';
 
 export enum Environment {
@@ -81,7 +82,7 @@ export class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
-  OTEL_SERVICE_NAME: string = 'hakka-backend';
+  OTEL_SERVICE_NAME: string = 'defect-tracker-backend';
 
   @IsOptional()
   @IsIn([
@@ -143,6 +144,39 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsBoolean()
   HELMET_ENABLED: boolean = true;
+
+  /**
+   * ==========================================================================
+   * AUTHENTICATION CONFIGURATIONS
+   * ==========================================================================
+   */
+
+  // No default, on purpose: a defaulted JWT secret is the classic "shipped with
+  // 'secret'" vulnerability. validateEnv() runs with skipMissingProperties: false,
+  // so a missing JWT_SECRET is a loud startup crash instead of a silent weak key.
+  @IsNotEmpty()
+  @IsString()
+  @MinLength(32)
+  JWT_SECRET: string;
+
+  // Accepts both forms @nestjs/jwt supports: a bare number of seconds, or an
+  // ms-style duration such as 12h / 30m / 7d.
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+(ms|s|m|h|d)?$/, {
+    message:
+      'JWT_EXPIRES_IN must be a number of seconds or an ms-style duration (e.g. 12h, 30m, 604800)',
+  })
+  JWT_EXPIRES_IN: string = '12h';
+
+  @Transform(({ value }) =>
+    value === '' || value === undefined ? undefined : Number(value),
+  )
+  @IsOptional()
+  @IsInt()
+  @Min(4)
+  @Max(15)
+  BCRYPT_SALT_ROUNDS: number = 10;
 
   /**
    * ==========================================================================

@@ -10,12 +10,12 @@ This file documents the *why* behind the folder layout, not just the *what* — 
 ## Root folder structure
 
 ```
-hakka/
+defect-tracker/
 ├── app/
 │   ├── backend/     # NestJS API — see "Backend layout" below
 │   └── frontend/    # React + TypeScript app (Vite) — see "Frontend layout" below
 └── .claude/
-    ├── commands/    # slash commands, all prefixed `hakka-`
+    ├── commands/    # slash commands, all project-scoped
     └── skills/      # reusable reference docs (this file included)
 ```
 
@@ -74,7 +74,7 @@ This is a **monorepo, not a shared build** — `app/backend/` and `app/frontend/
 
 ## Module folder structure (`src/modules/<module-name>/`)
 
-**This section is the source of truth for a feature module's shape.** Anything that scaffolds a module (e.g. a `hakka-new-module` command) should reference this section rather than re-embedding its own copy of these templates, so there's exactly one place to update when the convention changes.
+**This section is the source of truth for a feature module's shape.** Anything that scaffolds a module (e.g. a `new-module` command) should reference this section rather than re-embedding its own copy of these templates, so there's exactly one place to update when the convention changes.
 
 Every feature module follows the same hexagonal (ports-and-adapters) layout, so business logic (`domain/`) never depends on how it's exposed (`api/`) or how it's persisted (`infrastructure/`) — only the reverse:
 
@@ -316,7 +316,7 @@ import type {
 } from 'sequelize';
 import { SqlSchema } from '../../../../../../config/database/sql/sql-schema.constants';
 
-@Table({ schema: SqlSchema.Hakka, tableName: '{{snake_name}}', timestamps: true })
+@Table({ schema: SqlSchema.App, tableName: '{{snake_name}}', timestamps: true })
 export class {{PascalName}}Model extends Model<
   InferAttributes<{{PascalName}}Model>,
   InferCreationAttributes<{{PascalName}}Model>
@@ -442,7 +442,7 @@ Both paths read the same `DB_HOST`/`DB_PORT`/`DB_USERNAME`/`DB_PASSWORD`/`DB_NAM
 - **`src/config/database/sql/migrations/`** — the source of truth. Each file is a sequelize-cli-generated, timestamp-ordered `.js` migration that describes exactly one schema change, and the migrations table in the DB tracks which have actually been applied. **This — not the model files — is what defines the real, current schema**, since a `.model.ts` can be hand-edited out of sync with what's actually been migrated.
 - **`src/config/database/sql/seeders/`** — dev/reference data only, generated the same way. Never a source of schema.
 - **`src/config/database/sql/config/config.js`** — the CLI's DB connection, used only by the `sequelize-cli` commands below, not by the app.
-- **`src/config/database/sql/sql-schema.constants.ts`** — the `SqlSchema` const (e.g. `Hakka = 'hakka'`) referenced by every model's `@Table({ schema: ... })`. To find where a given module's table actually lives, check its model's `@Table` decorator for `schema` + `tableName`, then cross-reference migrations touching that schema/table.
+- **`src/config/database/sql/sql-schema.constants.ts`** — the `SqlSchema` const (e.g. `App = 'app'`) referenced by every model's `@Table({ schema: ... })`. To find where a given module's table actually lives, check its model's `@Table` decorator for `schema` + `tableName`, then cross-reference migrations touching that schema/table.
 
 To inspect or change the schema, use the `npm` scripts in `app/backend/package.json` (all backed by `sequelize-cli`, run from `app/backend/`):
 

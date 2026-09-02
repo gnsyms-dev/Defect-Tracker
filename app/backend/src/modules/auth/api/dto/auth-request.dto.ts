@@ -1,23 +1,22 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsEmail, IsNotEmpty, IsString } from 'class-validator';
 
-export class RegisterDto {
-  @ApiProperty({ example: 'user@example.com' })
-  @IsEmail()
-  email: string;
-
-  @ApiProperty({ example: 'StrongPassword123!', minLength: 8 })
-  @IsString()
-  @MinLength(8)
-  password: string;
-}
-
+// RegisterDto is deliberately absent. Accounts are seeded, and an open register
+// endpoint on which a self-assigned role would grant defect-resolution authority is
+// a live privilege-escalation path. When user management is genuinely needed it
+// belongs in a designed invite flow, not here.
 export class LoginDto {
-  @ApiProperty({ example: 'user@example.com' })
+  @ApiProperty({ example: 'supervisor@example.com' })
+  // Typed param so `value` is `unknown` rather than class-transformer's `any`;
+  // returning `any` from a transform would silently defeat the DTO's own typing.
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
   @IsEmail()
   email: string;
 
-  @ApiProperty({ example: 'StrongPassword123!' })
+  @ApiProperty({ example: 'Passw0rd!' })
   @IsString()
   @IsNotEmpty()
   password: string;

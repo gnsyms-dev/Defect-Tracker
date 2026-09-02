@@ -81,6 +81,6 @@ async function bootstrap(): Promise<void> {
     logger,
   );
 
-  logger.log(`Application is running on: ${await app.getUrl()}`, 'Bootstrap1');
+  logger.log(`Application is running on: ${await app.getUrl()}`, 'Bootstrap');
 }
 bootstrap();
