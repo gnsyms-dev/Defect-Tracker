@@ -1,310 +1,117 @@
-# Quality Inspection Tracker
+# Defect Tracker
 
-A mobile-first internal tool for shop-floor supervisors to log quality defects, and for
-QA managers to resolve them. Replaces the paper defect registers used at fabric plants
-across Gujarat and Maharashtra.
+## Getting Started
 
-Built on a NestJS + React monorepo:
+**1. Create the env file**
 
-- `app/backend` — NestJS 12 API (Sequelize, Postgres)
-- `app/frontend` — React 19 + TypeScript (Vite), offline-capable PWA
+```bash
+cp .env.example .env
+```
 
-**Design rationale lives in [`docs/DECISIONS.md`](docs/DECISIONS.md)** — what was
-decided, why, what was rejected, and what would make us revisit.
+Then set `JWT_SECRET` in `.env` (required, min 32 chars - the app won't boot without it):
 
----
+```bash
+openssl rand -hex 32
+```
 
-## What it does
+**2. Start the containers**
 
-| Capability | Notes |
-|---|---|
-| Log an inspection | Date, machine/line ID (free text), defect type, severity, optional remarks |
-| List inspections | Sortable, filterable by severity, status, defect type and date range; filters live in the URL |
-| Resolve an inspection | Mandatory resolution note, enforced at three layers including a DB constraint |
-| Summary | Open/resolved counts by severity, plus a per-plant breakdown for QA |
-| Offline | Inspections logged without connectivity are stored on the device and sync automatically when back online |
-| Auth | JWT, two roles with genuinely different apps |
+```bash
+docker compose up --build -d
+```
 
-### The two roles
+**3. Run migrations and seed data**
 
-| | SUPERVISOR | QA_MANAGER |
-|---|---|---|
-| Log a defect | ✅ | ❌ |
-| See inspections | Own only | All plants |
-| Resolve | ❌ | ✅ |
-| Summary | Own | All, with per-plant breakdown |
-| Tabs | Log · My Logs · Summary · Account | Inspections · Summary · Account |
+```bash
+docker compose exec backend npm run migrate:up
+docker compose exec backend npm run seed:up
+```
 
-Routes are *generated* from the role, so a route a role cannot use does not exist —
-there are no dead-end "Forbidden" screens.
+### URLs
 
----
-
-## Prerequisites
-
-- Docker + Docker Compose
-- `make`
-
-That is the whole list. `node_modules` is installed inside each image and never shared
-with the host, so nothing here needs a particular Node version — or any Node at all.
-Install dependencies on the host only if you want editor autocomplete and in-IDE
-typechecking; the containers ignore whatever you do there.
-
-## Setup
-
-1. **Create the env file.** There is exactly one, at the repo root.
-
-   ```bash
-   cp .env.example .env
-   ```
-
-   Then set **`JWT_SECRET`** — required, minimum 32 characters, **no default on purpose**.
-   The app refuses to boot without it rather than falling back to a weak key. Generate one:
-
-   ```bash
-   openssl rand -hex 32
-   ```
-
-   Everything else is already filled in, including the database credentials — compose
-   provisions Postgres from the same `DB_USERNAME` / `DB_PASSWORD` / `DB_NAME` the backend
-   connects with, so the two cannot drift apart.
-
-2. **Start everything.**
-
-   ```bash
-   make up
-   ```
-
-   Three containers come up: `postgres`, `backend`, `frontend`. The first run builds both
-   images and installs `node_modules` inside them, which takes a few minutes; later runs
-   are fast.
-
-3. **Create the schema and load demo data.**
-
-   ```bash
-   make migrate
-   make seed
-   ```
-
-   These run inside the backend container, which is where `sequelize-cli` lives.
-   Migrations are deliberately decoupled from app startup — they never run on boot.
-
-## URLs
-
-| | |
-|---|---|
+| Service | URL |
+| --- | --- |
 | Frontend | http://localhost:5173 |
-| Frontend, production build | http://localhost:4173 (after `make preview`) |
-| API | http://localhost:5000/api/v1 |
-| Swagger | http://localhost:5000/api/docs (click **Authorize** and paste a login token) |
-| Postgres | localhost:5432, database `defect_tracker` |
+| Backend API | http://localhost:5000/api/v1 |
+| Swagger docs | http://localhost:5000/api/docs |
 
-## Demo accounts
+### Login Credentials
 
-Created by the seeder. There is no public sign-up — an internal tool where a
-self-assigned role would grant defect-resolution authority should not have one.
+| Email | Password | Role |
+| --- | --- | --- |
+| supervisor@example.com | `Passw0rd!` | Supervisor |
+| supervisor2@example.com | `Passw0rd!` | Supervisor |
+| qa@example.com | `Passw0rd!` | QA Manager |
 
-| Email | Password | Role | Plant |
-|---|---|---|---|
-| `supervisor@example.com` | `Passw0rd!` | Supervisor | GJ-SUR-01 (Surat) |
-| `supervisor2@example.com` | `Passw0rd!` | Supervisor | MH-BHI-01 (Bhiwandi) |
-| `qa@example.com` | `Passw0rd!` | QA Manager | GJ-SUR-01 |
+## Assumptions
 
-Two supervisors at different plants exist so per-user scoping is demonstrable: each sees
-only their own rows, and the QA manager sees both.
+- **Two roles only - Supervisor and QA Manager.**
+  - *Supervisor* - works the shop floor: creates and updates inspections for their own plant.
+  - *QA Manager* - oversees quality: reads and reviews inspections across the organization.
+- **A Supervisor is mapped to exactly one plant.** They see and act on that plant's data only.
+- **A QA Manager has access to all plants.** No per-plant mapping is needed for them.
+- **RBAC, not ABAC.** Because the role boundary is clean and permissions follow the role (not per-record attributes), a role check plus a plant scope is enough. ABAC's policy engine would be cost without benefit here.
 
-The seeder refuses to run when `NODE_ENV=production`.
+## Decisions
 
----
+### Development Setup
 
-## Commands
+- One `docker compose up` starts everything - Postgres, backend, frontend.
+- Compose provisions the database, waits for its healthcheck, then boots the backend against it.
+- All config comes from a single root `.env`; service names (`postgres`, `backend`) handle container-to-container networking.
+- **Result:** zero config on a new machine - clone, copy `.env`, run one command.
 
-Everything runs from the repo root — there is no longer a reason to `cd` into an app,
-because the tools live in the containers.
+### Frontend - Clean Architecture
 
-| Command | What it does |
-|---|---|
-| `make up` | Build if needed, start all three containers, follow logs |
-| `make down` | Stop and remove the containers (the database volume survives) |
-| `make restart` | `down` + `up` |
-| `make reinstall` | Rebuild images and refresh `node_modules` — **use after any `package.json` change** |
-| `make migrate` / `make migrate-down` / `make migrate-status` | Apply / revert / inspect migrations |
-| `make seed` / `make seed-down` | Load / remove demo data (idempotent — re-running `make seed` inserts nothing) |
-| `make test` / `make test-backend` / `make test-frontend` | Run the suites in their containers |
-| `make logs` / `make ps` | Follow logs / show container status |
-| `make sh-backend` / `sh-frontend` / `sh-db` | Shell into a container (`sh-db` opens `psql`) |
+Each feature under `src/features/<name>/` splits into two layers:
 
-**`make reinstall` is the one to remember.** `node_modules` lives in an anonymous volume
-that compose fills from the image once and then reuses, so rebuilding an image is not
-enough on its own — `reinstall` throws the stale volume away.
+- `application/` - `domain/entities` (the models the app thinks in), `ports` (interfaces), `use-cases`, `validators`.
+- `infra/` - `dto` (API shapes), `repositories` (ports implemented), `ui` (pages, components, view-models).
 
-Anything not wrapped by a `make` target runs through the container directly, e.g.:
+**Benefit:** the UI only ever touches domain entities. A mapper sits between the API DTO and the domain model, so an API change is absorbed in one mapper file instead of rippling through components - small blast radius.
 
-```bash
-docker compose exec backend npm run lint
-docker compose exec frontend npm run typecheck
-docker compose exec backend npm run migrate:down:all   # quickest dev-database reset
-```
+### Backend - Hexagonal Architecture
 
----
+Each module under `src/modules/<name>/` splits into three layers:
 
-## Testing
+- `api/` - controllers, DTOs, and a mapper (domain → DTO).
+- `domain/` - entities and services; the business logic, framework-free.
+- `infrastructure/` - Sequelize models, repositories, and a mapper (persistence → domain).
 
-```bash
-make test              # both suites
-make test-backend      # just the backend
-make test-frontend     # just the frontend
-```
+**Benefit:** the same as the frontend, from both sides. Mappers on the persistence edge and the API edge mean the domain never knows about table columns or JSON payloads - everything crosses through an adapter, so a schema change or an API change stays at its own edge.
 
-Both run in their own container with `--no-deps`, so Postgres is not started: these are
-unit tests with the database mocked.
+**Also on the backend:**
 
-**The backend suite needs Node ≥ 24.9 with `--experimental-vm-modules`.** The Nest 12
-packages ship ESM-only while the backend compiles to CommonJS, so Jest has to `require()`
-ESM natively — which is gated on `vm.SourceTextModule.prototype.hasAsyncGraph`. The flag
-is already in the npm scripts, and the container is on Node 24, so this is only a problem
-if you run the suite on a host with older Node.
+- **Swagger** at `/api/docs` - OpenAPI spec generated from the DTOs, so the contract can't drift from the code.
+- **No direct `process.env` access.** Everything reads through Nest's `ConfigService`.
+- **Env validated at boot** with class-validator - a missing or malformed variable fails startup with a clear message instead of surfacing as a runtime bug later.
 
-What the tests cover, and why those things:
+## Key Design Decisions
 
-- **`flush-policy.spec.ts`** — the outbox error-classification table and backoff curve.
-  Pure, and the highest-consequence logic in the app: get it wrong and you either lose a
-  defect or retry a doomed request forever.
-- **`merge-rows.spec.ts`** — dedupe of queued vs server rows by `client_uuid`. A bug here
-  shows up as duplicated or vanishing defects.
-- **`IdbOutboxStore.spec.ts`** — run against a real (in-memory) IndexedDB via
-  `fake-indexeddb`, because the behaviour worth testing *is* the transaction and index
-  behaviour.
-- **Backend service and repository specs** — role scoping, the IST date rules, clock
-  clamping, the summary zero-fill, and the idempotent-create path.
+- Offline duplicate protection (client_uuid)
 
----
+I chose to generate a UUID on the client before saving a defect. This gives the server a way to recognise when the same save is being retried, rather than treating it as a new defect. If the request is sent again, the existing record is returned instead of creating another one. The UUID is scoped to the user as well, so IDs from different users don't interfere with each other.
 
-## Verifying it by hand
+- Five indexes, each tied to a real query
 
-### Mobile layout
+I kept the number of indexes deliberately small. Each of the five indexes supports a query that the application actually runs, rather than adding indexes speculatively. I also avoided separate indexes on fields such as status and severity because they only have a few possible values and don't narrow the results enough to be particularly useful on their own. For open defects, I used a partial index so that the index only covers the records we are likely to query frequently, while resolved defects can accumulate without making that index larger.
 
-Chrome DevTools → device toolbar → **iPhone 12 Pro (390×844)**. Sign in as the
-supervisor and walk: Log → save → My Logs → Filters → Summary. Then sign in as QA and
-walk the resolve flow. Widen past 768px and the card list becomes a real table.
+- Native ENUM only for severity
 
-### The API and the idempotency contract
+I used a Postgres ENUM for severity because it gives us something useful beyond validation: a natural ordering. That means we can sort by severity and get the most serious defects first without having to add another mapping in the application.
 
-```bash
-# Log in and capture the token
-curl -s localhost:5000/api/v1/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"supervisor@example.com","password":"Passw0rd!"}'
+- Authorization as a required function parameter
 
-# POST /inspections with a fixed clientUuid, then POST the identical body again:
-#   first  -> 201, code "2010"
-#   second -> 200, code "2000", same data.id
-# That is the contract the offline outbox depends on.
-```
+I made the authorization scope part of every repository read, rather than relying on each caller to remember to apply it. The scope is derived from the authenticated user's token-for example, a supervisor gets access to their own records while a QA manager can access all records.
 
-Worth checking explicitly:
+- Offline: always write locally first
 
-| Request | Expected |
-|---|---|
-| Supervisor → `PATCH /inspections/:id/resolve` | 403 |
-| QA → `POST /inspections` | 403 |
-| Supervisor → `GET /inspections` | Only their own rows, whatever query params they pass |
-| Supervisor → `GET /inspections/:id` for another user's row | **404, not 403** (a 403 would confirm it exists) |
-| `resolutionNote: "   "` | 400 |
-| Resolve an already-resolved row | 409 |
-| Wrong password vs unknown email | Identical 401 message |
+For offline support, I decided that every write should go to IndexedDB first, before we try the network.
 
-### Offline
+Having one path for saving also makes the behaviour easier to understand: once the local write succeeds, the item is saved and can be synced later. This avoids the awkward case where a request has left the browser, the connection drops, and we're no longer sure whether the record was actually saved.
 
-Two failure modes need two different tools, and only one of them is the obvious one.
+- No TanStack Query, no Redux
 
-**1. No network at all** — DevTools → Network → **Offline**.
+I decided not to introduce TanStack Query or Redux because the main state problem here isn't really query caching. The offline outbox needs to track things like sync status, retry counts and error types, and that state already belongs to the outbox itself.
 
-1. Log two inspections. Both appear immediately with "Not synced" chips, the tab badge
-   reads 2, and neither offers Resolve.
-2. Go back online. The outbox flushes, chips clear, and **no duplicates appear** — that
-   is the `client_uuid` dedupe.
-3. Check DevTools → Application → IndexedDB → `defect-tracker-offline` → `outbox` is
-   empty.
-
-**2. Connected, but the API is unreachable** — DevTools → Network → request blocking on
-`*/api/*`. This is the case that breaks designs which trust `navigator.onLine`, since it
-stays `true`. The app treats `true` as *unknown* and lets request outcomes decide.
-
-**Cold load while offline needs the production build.** The service worker is disabled in
-dev on purpose (a stale SW is the top cause of "my change isn't showing up"), so a full
-page load with no network only works against a real build:
-
-```bash
-make preview
-```
-
-That builds inside the frontend container and serves the result on
-**http://localhost:4173** (the dev server keeps running on 5173). Then in DevTools →
-Offline, reload the page: the app shell boots from the service worker and your queued
-inspections are still there. Without a SW this is the browser's offline
-page and the app — along with the queue — is unreachable.
-
-### Testing on a real phone
-
-Two traps, both caused by the same thing: `http://<LAN-IP>:5173` is **not a secure
-context**.
-
-- `crypto.randomUUID()` is `undefined` there. The app falls back to
-  `crypto.getRandomValues` (which is *not* secure-context gated), so offline logging
-  still works — but this is why that fallback exists.
-- **A service worker will not register at all**, so offline cold-load cannot be tested
-  that way.
-
-On Android, `adb reverse tcp:5173 tcp:5173` makes the phone see it as
-`http://localhost:5173`, which *is* a secure context and fixes both. On iOS, use an https
-tunnel.
-
----
-
-## Layout
-
-```
-app/backend/src/
-├── config/                     # env validation, database, cors, logger, swagger, telemetry
-│   └── database/sql/
-│       ├── migrations/         # THE source of truth for the schema
-│       └── seeders/            # plants -> users -> inspections (ordered by filename)
-├── modules/
-│   ├── auth/                   # users, login, JWT, guards
-│   ├── plants/                 # reference data
-│   └── inspections/            # the core feature
-└── shared/                     # response envelope, guards, decorators, pagination
-
-app/frontend/src/
-├── app/                        # composition root: DI, router, layouts
-├── shared/
-│   ├── api/                    # HttpClient, envelope unwrap, NetworkError vs ApiError
-│   ├── offline/                # outbox, cache, sync engine, connectivity
-│   └── ui/                     # design-token-driven primitives
-└── features/{auth,inspections,plants}/
-    ├── application/            # entities, ports, use-cases, zod validators
-    └── infra/                  # dto+mappers, repositories, ui (pages/components/view-models)
-```
-
-Each backend module follows the hexagonal layout documented in
-`.claude/skills/project-structure/SKILL.md`; the frontend follows the layering in
-`.claude/skills/frontend-project-structure/SKILL.md`.
-
-## Notes
-
-- **Migrations, not models, define the schema.** A `.model.ts` can be edited out of sync
-  with what has actually been migrated.
-- **`node_modules` is never shared with the host.** Each image installs its own with
-  `npm ci`, and compose shadows the host directory at that path with an anonymous volume.
-  A host `npm i` therefore cannot reach in and break a container, and the container's
-  modules are always built against its own Node and libc. The cost is that a
-  `package.json` change needs `make reinstall`, not just `make restart`.
-- **Each app builds from its own context.** `app/backend/Dockerfile` and
-  `app/frontend/Dockerfile` are dev images — dev dependencies included, source
-  bind-mounted for hot reload. They are not production images and are not pretending to
-  be; building those is a separate job.
-- **The frontend talks to the API same-origin** through Vite's `/api` proxy in dev and
-  preview. That is not just convenience: a CORS rejection is indistinguishable from being
-  offline in JavaScript, so an absolute cross-origin URL would let a CORS
-  misconfiguration masquerade as permanent offline. See `docs/DECISIONS.md` §10.
+Adding another cache on top would mean maintaining two representations of essentially the same list, which felt like unnecessary complexity for this application.
