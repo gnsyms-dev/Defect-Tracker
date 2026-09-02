@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Logger,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -40,11 +41,14 @@ interface HealthCheckData {
 @ApiBearerAuth()
 @Controller('inspections')
 export class InspectionsController {
+  private readonly logger = new Logger(InspectionsController.name);
+
   constructor(private readonly inspectionsService: InspectionsService) {}
 
   @Get('health')
   @Public()
   healthCheck(): ApiResponseDto<HealthCheckData> {
+    this.logger.debug('Inspections health check requested');
     return ApiResponseDto.success('OK', { status: 'ok' });
   }
 
@@ -64,6 +68,13 @@ export class InspectionsController {
     // hide the distinction from all three.
     @Res({ passthrough: true }) res: Response,
   ): Promise<ApiResponseDto<InspectionResponseDto>> {
+    // clientUuid is logged on the way in as well as out: it is the only handle
+    // that ties a replayed offline submission to the request that first created
+    // the row.
+    this.logger.log(
+      `Log inspection requested userId=${user.id} clientUuid=${dto.clientUuid} defectType=${dto.defectType} severity=${dto.severity}`,
+    );
+
     const { item, wasCreated } = await this.inspectionsService.log(user, {
       clientUuid: dto.clientUuid,
       inspectionDate: dto.inspectionDate,
@@ -76,6 +87,10 @@ export class InspectionsController {
     });
 
     res.status(wasCreated ? 201 : 200);
+
+    this.logger.log(
+      `Log inspection completed id=${item.inspection.id} clientUuid=${dto.clientUuid} outcome=${wasCreated ? 'created' : 'replayed'}`,
+    );
 
     return ApiResponseDto.success(
       wasCreated
@@ -100,6 +115,8 @@ export class InspectionsController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: InspectionFilterDto,
   ): Promise<ApiResponseDto<InspectionSummaryResponseDto>> {
+    this.logger.debug(`Summary requested userId=${user.id} role=${user.role}`);
+
     const summary = await this.inspectionsService.summarize(user, {
       severities: query.severity,
       status: query.status,
@@ -109,6 +126,10 @@ export class InspectionsController {
       plantId: query.plantId,
       machineLineId: query.machineLineId,
     });
+
+    this.logger.debug(
+      `Summary returned userId=${user.id} open=${summary.totals.open} resolved=${summary.totals.resolved}`,
+    );
 
     return ApiResponseDto.success(
       'Summary fetched successfully.',
@@ -127,6 +148,10 @@ export class InspectionsController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: ListInspectionsQueryDto,
   ): Promise<ApiResponseDto<PaginatedDto<InspectionResponseDto>>> {
+    this.logger.debug(
+      `List requested userId=${user.id} role=${user.role} page=${query.page} limit=${query.limit} sortBy=${query.sortBy} sortDir=${query.sortDir}`,
+    );
+
     const page = await this.inspectionsService.list(
       user,
       {
@@ -140,6 +165,10 @@ export class InspectionsController {
       },
       { field: query.sortBy, direction: query.sortDir },
       { page: query.page, limit: query.limit },
+    );
+
+    this.logger.debug(
+      `List returned userId=${user.id} items=${page.items.length} total=${page.total}`,
     );
 
     return ApiResponseDto.success(
@@ -164,7 +193,10 @@ export class InspectionsController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<ApiResponseDto<InspectionResponseDto>> {
+    this.logger.debug(`Fetch inspection requested userId=${user.id} id=${id}`);
+
     const item = await this.inspectionsService.getById(user, id);
+
     return ApiResponseDto.success(
       'Inspection fetched successfully.',
       InspectionsApiMapper.toResponseDto(item),
@@ -183,11 +215,18 @@ export class InspectionsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ResolveInspectionDto,
   ): Promise<ApiResponseDto<InspectionResponseDto>> {
+    this.logger.log(`Resolve inspection requested userId=${user.id} id=${id}`);
+
     const item = await this.inspectionsService.resolve(
       user,
       id,
       dto.resolutionNote,
     );
+
+    this.logger.log(
+      `Resolve inspection completed userId=${user.id} id=${item.inspection.id}`,
+    );
+
     return ApiResponseDto.success(
       'Inspection resolved successfully.',
       InspectionsApiMapper.toResponseDto(item),

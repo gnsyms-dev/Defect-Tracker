@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { col, fn, literal, Op, UniqueConstraintError } from 'sequelize';
 import type { GroupOption, Order, WhereOptions } from 'sequelize';
@@ -60,6 +60,8 @@ interface RawSummaryRow {
 
 @Injectable()
 export class InspectionsRepository implements InspectionsRepositoryPort {
+  private readonly logger = new Logger(InspectionsRepository.name);
+
   constructor(
     @InjectModel(InspectionModel)
     private readonly inspectionModel: typeof InspectionModel,
@@ -80,6 +82,10 @@ export class InspectionsRepository implements InspectionsRepositoryPort {
         remarks: data.remarks,
         loggedAt: data.loggedAt,
       });
+      this.logger.debug(
+        `createIfAbsent outcome=inserted id=${created.id} clientUuid=${data.clientUuid}`,
+      );
+
       return {
         inspection: InspectionPersistenceMapper.toDomain(created),
         wasCreated: true,
@@ -92,6 +98,12 @@ export class InspectionsRepository implements InspectionsRepositoryPort {
       // has to be handled either way. Handling it here keeps the happy path a
       // single plain INSERT.
       if (!(err instanceof UniqueConstraintError)) {
+        // Logged here rather than left to the global filter alone, because this
+        // is the only place that still knows which write failed and for whom.
+        this.logger.error(
+          `createIfAbsent failed clientUuid=${data.clientUuid} loggedByUserId=${data.loggedByUserId}`,
+          err instanceof Error ? err.stack : String(err),
+        );
         throw err;
       }
 
@@ -105,8 +117,15 @@ export class InspectionsRepository implements InspectionsRepositoryPort {
       // A unique violation with nothing to find would mean a different constraint
       // fired; rethrowing keeps that from being silently swallowed as a replay.
       if (!existing) {
+        this.logger.error(
+          `createIfAbsent hit an unexpected unique violation clientUuid=${data.clientUuid} loggedByUserId=${data.loggedByUserId} fields=${Object.keys(err.fields).join('|')}`,
+        );
         throw err;
       }
+
+      this.logger.debug(
+        `createIfAbsent outcome=replayed id=${existing.id} clientUuid=${data.clientUuid}`,
+      );
 
       return {
         inspection: InspectionPersistenceMapper.toDomain(existing),
@@ -121,12 +140,17 @@ export class InspectionsRepository implements InspectionsRepositoryPort {
     sort: InspectionSort,
     pagination: Pagination,
   ): Promise<Page<InspectionEntity>> {
+    const startedAt = Date.now();
     const { rows, count } = await this.inspectionModel.findAndCountAll({
       where: InspectionsRepository.buildWhere(scope, filters),
       order: InspectionsRepository.buildOrder(sort),
       limit: pagination.limit,
       offset: (pagination.page - 1) * pagination.limit,
     });
+
+    this.logger.debug(
+      `findMany rows=${rows.length} total=${count} page=${pagination.page} limit=${pagination.limit} +${Date.now() - startedAt}ms`,
+    );
 
     return {
       items: rows.map((row) => InspectionPersistenceMapper.toDomain(row)),
@@ -144,6 +168,11 @@ export class InspectionsRepository implements InspectionsRepositoryPort {
     const row = await this.inspectionModel.findOne({
       where: { ...InspectionsRepository.buildWhere(scope, {}), id },
     });
+
+    this.logger.debug(
+      `findById id=${id} scope=${scope.kind} result=${row ? 'hit' : 'miss'}`,
+    );
+
     return row ? InspectionPersistenceMapper.toDomain(row) : null;
   }
 
@@ -157,6 +186,7 @@ export class InspectionsRepository implements InspectionsRepositoryPort {
     // Reusing buildWhere with findMany is the point: it is what guarantees the
     // summary can never disagree with the list it sits above, which is the single
     // most common source of "the numbers don't match" bug reports.
+    const startedAt = Date.now();
     const rows = await this.inspectionModel.findAll({
       attributes: [
         'status',
@@ -168,6 +198,10 @@ export class InspectionsRepository implements InspectionsRepositoryPort {
       group: GROUPING_SETS,
       raw: true,
     });
+
+    this.logger.debug(
+      `summarize groupedRows=${rows.length} scope=${scope.kind} +${Date.now() - startedAt}ms`,
+    );
 
     return (rows as unknown as readonly RawSummaryRow[]).map((row) =>
       InspectionsRepository.toSummaryRow(row),
@@ -202,6 +236,13 @@ export class InspectionsRepository implements InspectionsRepositoryPort {
     );
 
     const updated = updatedRows?.[0];
+
+    // outcome=no-op is not an error at this layer -- the service turns it into a
+    // 404 or a 409 -- but it is the half of the race that leaves no other trace.
+    this.logger.debug(
+      `resolveIfOpen id=${id} scope=${scope.kind} outcome=${updated ? 'resolved' : 'no-op'}`,
+    );
+
     return updated ? InspectionPersistenceMapper.toDomain(updated) : null;
   }
 

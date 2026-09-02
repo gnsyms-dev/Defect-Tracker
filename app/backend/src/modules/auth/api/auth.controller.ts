@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   Post,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -26,11 +27,14 @@ interface HealthCheckData {
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(private readonly authService: AuthService) {}
 
   @Get('health')
   @Public()
   healthCheck(): ApiResponseDto<HealthCheckData> {
+    this.logger.debug('Auth health check requested');
     return ApiResponseDto.success('OK', { status: 'ok' });
   }
 
@@ -45,10 +49,19 @@ export class AuthController {
   async login(
     @Body() loginDto: LoginDto,
   ): Promise<ApiResponseDto<LoginResponseDto>> {
+    // The email is masked by the logger's own sanitizer before it is written,
+    // and the password never reaches a log line at any level.
+    this.logger.log(`Login requested email=${loginDto.email}`);
+
     const result = await this.authService.login(
       loginDto.email,
       loginDto.password,
     );
+
+    this.logger.log(
+      `Login response issued userId=${result.user.id} expiresInSeconds=${result.expiresInSeconds}`,
+    );
+
     return ApiResponseDto.success(
       'Login successful.',
       AuthApiMapper.toLoginResponseDto(result),
@@ -66,9 +79,16 @@ export class AuthController {
   async me(
     @CurrentUser() currentUser: AuthenticatedUser,
   ): Promise<ApiResponseDto<AuthenticatedUserDto>> {
+    this.logger.debug(`Current user requested userId=${currentUser.id}`);
+
     const { user, plant } = await this.authService.getAuthenticatedUserView(
       currentUser.id,
     );
+
+    this.logger.debug(
+      `Current user resolved userId=${user.id} role=${user.role} plant=${plant?.code ?? 'unknown'}`,
+    );
+
     return ApiResponseDto.success(
       'Current user fetched successfully.',
       AuthApiMapper.toAuthenticatedUserDto(user, plant),

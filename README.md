@@ -11,7 +11,7 @@ cp .env.example .env
 **2. Start the containers**
 
 ```bash
-docker compose up --build -d
+docker compose up
 ```
 
 ### URLs

@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Logger } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiResponseDto } from '@shared/dto/api-response.dto';
 import { Public } from '@shared/decorators/public.decorator';
@@ -14,11 +14,14 @@ interface HealthCheckData {
 @ApiBearerAuth()
 @Controller('plants')
 export class PlantsController {
+  private readonly logger = new Logger(PlantsController.name);
+
   constructor(private readonly plantsService: PlantsService) {}
 
   @Get('health')
   @Public()
   healthCheck(): ApiResponseDto<HealthCheckData> {
+    this.logger.debug('Plants health check requested');
     return ApiResponseDto.success('OK', { status: 'ok' });
   }
 
@@ -27,7 +30,12 @@ export class PlantsController {
   @Get()
   @ApiOperation({ summary: 'List active plants' })
   async list(): Promise<ApiResponseDto<PlantResponseDto[]>> {
+    this.logger.debug('Active plant list requested');
+
     const plants = await this.plantsService.listActive();
+
+    this.logger.debug(`Active plant list returned count=${plants.length}`);
+
     return ApiResponseDto.success(
       'Plants fetched successfully.',
       PlantsApiMapper.toResponseDtoList(plants),

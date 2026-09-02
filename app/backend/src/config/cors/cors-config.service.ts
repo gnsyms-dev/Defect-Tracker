@@ -1,32 +1,48 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.interface';
 import { ConfigService } from '@nestjs/config';
 import { EnvironmentVariables } from '../environment/env.types';
 
 @Injectable()
 export class CorsConfigService {
+  private readonly logger = new Logger(CorsConfigService.name);
+
   constructor(
     private readonly configService: ConfigService<EnvironmentVariables, true>,
   ) {}
 
   isCorsEnabled(): boolean {
-    return this.configService.get('CORS_ENABLED', { infer: true });
+    const isEnabled = this.configService.get('CORS_ENABLED', { infer: true });
+    this.logger.log(`CORS ${isEnabled ? 'enabled' : 'disabled'}`);
+    return isEnabled;
   }
 
   getCorsConfig(): CorsOptions {
+    const origin = this.parseOrigin(
+      this.configService.get('CORS_ALLOWED_ORIGINS', { infer: true }),
+    );
+    const methods = this.splitAndTrim(
+      this.configService.get('CORS_ALLOWED_METHODS', { infer: true }),
+    );
+    const credentials = this.configService.get('CORS_CREDENTIALS', {
+      infer: true,
+    });
+
+    // A blocked browser call surfaces client-side as an indistinguishable
+    // TypeError (see parseOrigin below), so the effective policy is recorded at
+    // boot -- that log line is usually the fastest way to tell a CORS
+    // misconfiguration apart from a genuinely unreachable backend.
+    this.logger.log(
+      `CORS policy origin=${Array.isArray(origin) ? origin.join('|') : origin} methods=${methods.join('|')} credentials=${credentials ? 'yes' : 'no'}`,
+    );
+
     return {
-      origin: this.parseOrigin(
-        this.configService.get('CORS_ALLOWED_ORIGINS', { infer: true }),
-      ),
-      methods: this.splitAndTrim(
-        this.configService.get('CORS_ALLOWED_METHODS', { infer: true }),
-      ),
+      origin,
+      methods,
       allowedHeaders: this.splitAndTrim(
         this.configService.get('CORS_ALLOWED_HEADERS', { infer: true }),
       ),
-      credentials: this.configService.get('CORS_CREDENTIALS', {
-        infer: true,
-      }),
+      credentials,
       exposedHeaders: ['Content-Disposition'],
     };
   }

@@ -1,4 +1,9 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { UserRole } from '@shared/enums/user-role.enum';
 import type { AuthenticatedUser } from '@shared/types/authenticated-user.interface';
@@ -22,6 +27,8 @@ import type {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   // Lazily-built hash of a throwaway value, used to equalise response time on the
   // unknown-email path. Without it, "no such user" returns measurably faster than
   // "wrong password", which is a usable account-enumeration oracle even though both
@@ -43,6 +50,10 @@ export class AuthService {
     const user = await this.userRepository.findByEmail(email);
 
     if (!user) {
+      // The response is identical for every failure reason, but the LOG is not:
+      // distinguishing them server-side is what makes a credential-stuffing run
+      // (many unknown emails) legible next to one user fat-fingering a password.
+      this.logger.warn(`Login rejected reason=unknown-email email=${email}`);
       await this.burnTimeOnDummyHash(password);
       throw new UnauthorizedException(AuthErrorMessage.InvalidCredentials);
     }
@@ -56,6 +67,9 @@ export class AuthService {
     // account: a distinct "account disabled" message would confirm the address
     // exists.
     if (!isPasswordValid || !user.isActive) {
+      this.logger.warn(
+        `Login rejected reason=${isPasswordValid ? 'inactive-account' : 'invalid-password'} userId=${user.id}`,
+      );
       throw new UnauthorizedException(AuthErrorMessage.InvalidCredentials);
     }
 
@@ -65,6 +79,10 @@ export class AuthService {
     // Fire-and-forget would be tempting, but an unawaited rejection would surface
     // as an unhandled promise rejection; the write is a single indexed update.
     await this.userRepository.touchLastLogin(user.id, new Date());
+
+    this.logger.log(
+      `Login succeeded userId=${user.id} role=${user.role} plantId=${user.plantId}`,
+    );
 
     return {
       user,
@@ -88,9 +106,26 @@ export class AuthService {
     userId: string,
   ): Promise<AuthenticatedUser | null> {
     const user = await this.userRepository.findById(userId);
-    if (!user || !user.isActive) {
+
+    if (!user) {
+      // A signature-valid token whose subject no longer exists: worth a warning
+      // rather than a debug line, because the token outlives the row.
+      this.logger.warn(
+        `Session rejected reason=unknown-subject userId=${userId}`,
+      );
       return null;
     }
+
+    if (!user.isActive) {
+      // The kill switch doing its job -- logged so a deactivation that is still
+      // being exercised by a live client is visible.
+      this.logger.warn(
+        `Session rejected reason=inactive-account userId=${userId}`,
+      );
+      return null;
+    }
+
+    this.logger.debug(`Session resolved userId=${userId} role=${user.role}`);
     return AuthService.toAuthenticatedUser(user);
   }
 
@@ -100,6 +135,9 @@ export class AuthService {
   ): Promise<AuthenticatedUserView> {
     const user = await this.userRepository.findById(userId);
     if (!user || !user.isActive) {
+      this.logger.warn(
+        `Profile rejected reason=${user ? 'inactive-account' : 'unknown-subject'} userId=${userId}`,
+      );
       throw new UnauthorizedException(AuthErrorMessage.AccountUnavailable);
     }
     return { user, plant: await this.findPlant(user.plantId) };
@@ -107,7 +145,13 @@ export class AuthService {
 
   private async findPlant(plantId: string): Promise<PlantSummary | null> {
     const [plant] = await this.plantDirectory.findSummariesByIds([plantId]);
-    return plant ?? null;
+    if (!plant) {
+      // A user row always carries a plant_id FK, so a miss here is a referential
+      // surprise rather than an ordinary empty result.
+      this.logger.warn(`Plant not found for user plantId=${plantId}`);
+      return null;
+    }
+    return plant;
   }
 
   private async burnTimeOnDummyHash(password: string): Promise<void> {

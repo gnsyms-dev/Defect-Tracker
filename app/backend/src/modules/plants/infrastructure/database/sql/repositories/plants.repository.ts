@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Op } from 'sequelize';
 import { PlantEntity } from '../../../../domain/entities/plant.entity';
@@ -17,12 +17,15 @@ import { PlantModel } from '../models/plant.model';
 export class PlantsRepository
   implements PlantsRepositoryPort, PlantDirectoryPort
 {
+  private readonly logger = new Logger(PlantsRepository.name);
+
   constructor(
     @InjectModel(PlantModel)
     private readonly plantModel: typeof PlantModel,
   ) {}
 
   async findAllActive(): Promise<readonly PlantEntity[]> {
+    const startedAt = Date.now();
     const rows = await this.plantModel.findAll({
       where: { isActive: true },
       order: [
@@ -30,11 +33,17 @@ export class PlantsRepository
         ['name', 'ASC'],
       ],
     });
+
+    this.logger.debug(
+      `findAllActive rows=${rows.length} +${Date.now() - startedAt}ms`,
+    );
+
     return rows.map((row) => PlantPersistenceMapper.toDomain(row));
   }
 
   async findById(id: string): Promise<PlantEntity | null> {
     const row = await this.plantModel.findByPk(id);
+    this.logger.debug(`findById id=${id} result=${row ? 'hit' : 'miss'}`);
     return row ? PlantPersistenceMapper.toDomain(row) : null;
   }
 
@@ -51,6 +60,11 @@ export class PlantsRepository
       where: { id: { [Op.in]: [...ids] } },
       attributes: ['id', 'code', 'name'],
     });
+
+    this.logger.debug(
+      `findSummariesByIds requested=${ids.length} found=${rows.length}`,
+    );
+
     return rows.map((row) => PlantPersistenceMapper.toSummary(row));
   }
 }

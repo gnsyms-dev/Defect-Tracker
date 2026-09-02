@@ -18,6 +18,7 @@ const config: Config = {
     '^.+\\.(t|j)s$': ['ts-jest', { tsconfig: 'tsconfig.spec.json' }],
   },
   moduleNameMapper: pathsToModuleNameMapper(paths, { prefix: '<rootDir>/' }),
+  setupFiles: ['<rootDir>/test/support/silence-nest-logger.ts'],
   collectCoverageFrom: [
     'src/**/*.(t|j)s',
     'libs/**/*.(t|j)s',

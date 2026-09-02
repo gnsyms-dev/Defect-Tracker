@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -72,6 +73,8 @@ export interface LoggedInspectionResult {
 
 @Injectable()
 export class InspectionsService {
+  private readonly logger = new Logger(InspectionsService.name);
+
   constructor(
     @Inject(INSPECTIONS_REPOSITORY)
     private readonly inspectionsRepository: InspectionsRepositoryPort,
@@ -91,14 +94,17 @@ export class InspectionsService {
     // past inspections. A supplied plantId is only ever allowed to confirm the
     // caller's own plant.
     if (input.plantId && input.plantId !== user.plantId) {
+      // Worth a warning rather than a debug line: a client sending someone
+      // else's plantId is either a bug in the app or an attempt to write across
+      // plants, and both are things you want to see without raising the level.
+      this.logger.warn(
+        `Log rejected reason=plant-not-owned userId=${user.id} userPlantId=${user.plantId} requestedPlantId=${input.plantId}`,
+      );
       throw new ForbiddenException(InspectionErrorMessage.PlantNotOwned);
     }
 
     this.assertNotFutureDate(input.inspectionDate);
-    InspectionsService.assertRemarksPresentForOther(
-      input.defectType,
-      input.remarks,
-    );
+    this.assertRemarksPresentForOther(input.defectType, input.remarks);
 
     const result: CreateInspectionResult =
       await this.inspectionsRepository.createIfAbsent({
@@ -113,6 +119,10 @@ export class InspectionsService {
         loggedAt: this.clampLoggedAt(input.loggedAt),
       });
 
+    this.logger.log(
+      `Inspection ${result.wasCreated ? 'created' : 'replayed'} id=${result.inspection.id} clientUuid=${input.clientUuid} userId=${user.id} plantId=${user.plantId} defectType=${input.defectType} severity=${input.severity} inspectionDate=${input.inspectionDate}`,
+    );
+
     const [item] = await this.decorate([result.inspection]);
     return { item, wasCreated: result.wasCreated };
   }
@@ -125,11 +135,20 @@ export class InspectionsService {
   ): Promise<Page<InspectionListItem>> {
     this.assertValidDateRange(filters);
 
+    const scope = this.scopeFor(user);
+    this.logger.debug(
+      `Listing inspections userId=${user.id} scope=${InspectionsService.describeScope(scope)} page=${pagination.page} limit=${pagination.limit} sort=${sort.field}:${sort.direction} filters=[${InspectionsService.describeFilters(filters)}]`,
+    );
+
     const page = await this.inspectionsRepository.findMany(
-      this.scopeFor(user),
+      scope,
       filters,
       sort,
       pagination,
+    );
+
+    this.logger.debug(
+      `Listed inspections userId=${user.id} items=${page.items.length} total=${page.total}`,
     );
 
     return { items: await this.decorate(page.items), total: page.total };
@@ -148,6 +167,12 @@ export class InspectionsService {
     // so "not yours" and "does not exist" are indistinguishable here by design --
     // a 403 would confirm the row exists.
     if (!inspection) {
+      // "Not yours" and "does not exist" are one case to the caller, but the log
+      // keeps the scope that produced the miss, which is what makes an
+      // unexpected 404 diagnosable without reproducing it as that user.
+      this.logger.warn(
+        `Inspection not found id=${id} userId=${user.id} scope=${InspectionsService.describeScope(this.scopeFor(user))}`,
+      );
       throw new NotFoundException(InspectionErrorMessage.NotFound);
     }
 
@@ -169,6 +194,9 @@ export class InspectionsService {
     });
 
     if (resolved) {
+      this.logger.log(
+        `Inspection resolved id=${id} userId=${user.id} severity=${resolved.severity} plantId=${resolved.plantId}`,
+      );
       const [item] = await this.decorate([resolved]);
       return item;
     }
@@ -179,8 +207,15 @@ export class InspectionsService {
     // because only creates are ever replayed from the offline outbox.
     const existing = await this.inspectionsRepository.findById(scope, id);
     if (!existing) {
+      this.logger.warn(
+        `Resolve rejected reason=not-found id=${id} userId=${user.id} scope=${InspectionsService.describeScope(scope)}`,
+      );
       throw new NotFoundException(InspectionErrorMessage.NotFound);
     }
+
+    this.logger.warn(
+      `Resolve rejected reason=already-resolved id=${id} userId=${user.id} resolvedByUserId=${existing.resolvedByUserId ?? 'unknown'}`,
+    );
     throw new ConflictException(InspectionErrorMessage.AlreadyResolved);
   }
 
@@ -190,10 +225,12 @@ export class InspectionsService {
   ): Promise<InspectionSummary> {
     this.assertValidDateRange(filters);
 
-    const rows = await this.inspectionsRepository.summarize(
-      this.scopeFor(user),
-      filters,
+    const scope = this.scopeFor(user);
+    this.logger.debug(
+      `Summarizing inspections userId=${user.id} scope=${InspectionsService.describeScope(scope)} filters=[${InspectionsService.describeFilters(filters)}]`,
     );
+
+    const rows = await this.inspectionsRepository.summarize(scope, filters);
 
     const plantIds = [
       ...new Set(
@@ -204,11 +241,17 @@ export class InspectionsService {
     ];
     const plantsById = await this.loadPlants(plantIds);
 
-    return {
+    const summary: InspectionSummary = {
       totals: InspectionsService.pivotTotals(rows),
       bySeverity: InspectionsService.pivotBySeverity(rows),
       byPlant: InspectionsService.pivotByPlant(rows, plantsById),
     };
+
+    this.logger.debug(
+      `Summarized inspections userId=${user.id} open=${summary.totals.open} resolved=${summary.totals.resolved} plants=${summary.byPlant.length}`,
+    );
+
+    return summary;
   }
 
   // ---------------------------------------------------------------------------
@@ -238,7 +281,14 @@ export class InspectionsService {
    * No lower bound: entering a paper backlog is a legitimate use of this tool.
    */
   private assertNotFutureDate(inspectionDate: string): void {
-    if (inspectionDate > InspectionsService.todayInPlantTimeZone()) {
+    const today = InspectionsService.todayInPlantTimeZone();
+    if (inspectionDate > today) {
+      // Logged with both dates because the interesting failure is the one where
+      // they differ only by the IST offset -- a device in another timezone, not
+      // a user typing a future date.
+      this.logger.warn(
+        `Log rejected reason=future-date inspectionDate=${inspectionDate} plantToday=${today}`,
+      );
       throw new UnprocessableEntityException(InspectionErrorMessage.FutureDate);
     }
   }
@@ -256,14 +306,26 @@ export class InspectionsService {
     const value = loggedAt.getTime();
 
     if (Number.isNaN(value)) {
+      this.logger.warn('Log rejected reason=invalid-logged-at');
       throw new BadRequestException('loggedAt is not a valid timestamp.');
     }
     if (value < now - MAX_LOGGED_AT_AGE_MS) {
+      this.logger.warn(
+        `Log rejected reason=logged-at-too-old ageMs=${now - value} maxAgeMs=${MAX_LOGGED_AT_AGE_MS}`,
+      );
       throw new UnprocessableEntityException(
         InspectionErrorMessage.LoggedAtTooOld,
       );
     }
-    return value > now + MAX_CLOCK_SKEW_MS ? new Date(now) : loggedAt;
+    if (value > now + MAX_CLOCK_SKEW_MS) {
+      // Clamping is silent to the client by design, so the log line is the only
+      // place a fleet of fast device clocks becomes visible.
+      this.logger.warn(
+        `Clamped future loggedAt skewMs=${value - now} maxSkewMs=${MAX_CLOCK_SKEW_MS}`,
+      );
+      return new Date(now);
+    }
+    return loggedAt;
   }
 
   /**
@@ -276,11 +338,14 @@ export class InspectionsService {
    * The matching DB CHECK stays as the backstop, but this is what turns the case
    * into a clean 400 instead of a constraint violation surfacing as a 500.
    */
-  private static assertRemarksPresentForOther(
+  private assertRemarksPresentForOther(
     defectType: DefectType,
     remarks: string | null,
   ): void {
     if (defectType === DefectType.Other && !remarks?.trim()) {
+      this.logger.warn(
+        `Log rejected reason=remarks-required-for-other defectType=${defectType}`,
+      );
       throw new BadRequestException(
         InspectionErrorMessage.RemarksRequiredForOther,
       );
@@ -293,8 +358,53 @@ export class InspectionsService {
       filters.dateTo &&
       filters.dateFrom > filters.dateTo
     ) {
+      this.logger.warn(
+        `Query rejected reason=invalid-date-range dateFrom=${filters.dateFrom} dateTo=${filters.dateTo}`,
+      );
       throw new BadRequestException(InspectionErrorMessage.InvalidDateRange);
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Log rendering
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Renders the effective scope for a log line. Printed on every scoped read so
+   * an "I cannot see my own row" report can be answered from the logs alone.
+   */
+  private static describeScope(scope: InspectionScope): string {
+    return scope.kind === 'own' ? `own:${scope.userId}` : 'all';
+  }
+
+  /**
+   * Compact, log-safe rendering of the applied filters -- only the keys that are
+   * actually set, so an unfiltered query stays a short line.
+   */
+  private static describeFilters(filters: InspectionFilters): string {
+    const parts: string[] = [];
+    if (filters.severities && filters.severities.length > 0) {
+      parts.push(`severity=${filters.severities.join('|')}`);
+    }
+    if (filters.status) {
+      parts.push(`status=${filters.status}`);
+    }
+    if (filters.defectTypes && filters.defectTypes.length > 0) {
+      parts.push(`defectType=${filters.defectTypes.join('|')}`);
+    }
+    if (filters.dateFrom) {
+      parts.push(`dateFrom=${filters.dateFrom}`);
+    }
+    if (filters.dateTo) {
+      parts.push(`dateTo=${filters.dateTo}`);
+    }
+    if (filters.plantId) {
+      parts.push(`plantId=${filters.plantId}`);
+    }
+    if (filters.machineLineId) {
+      parts.push(`machineLineId=${filters.machineLineId}`);
+    }
+    return parts.join(' ');
   }
 
   /** `en-CA` yields YYYY-MM-DD directly, so no manual formatting is needed. */
@@ -340,6 +450,14 @@ export class InspectionsService {
     const usersById = new Map<string, UserSummary>(
       users.map((user) => [user.id, user]),
     );
+
+    if (usersById.size < userIds.size || plants.size < plantIds.size) {
+      // Every id here came off an inspection row's FK, so a shortfall means a
+      // name will silently render as null on the list screen.
+      this.logger.warn(
+        `Directory lookup incomplete users=${usersById.size}/${userIds.size} plants=${plants.size}/${plantIds.size}`,
+      );
+    }
 
     return inspections.map((inspection) => ({
       inspection,
