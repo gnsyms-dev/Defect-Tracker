@@ -3,8 +3,22 @@ import { todayInPlantTimeZone } from '@/shared/lib/datetime';
 import { DefectType } from '../domain/DefectType';
 import { Severity } from '../domain/Severity';
 
-const MAX_MACHINE_LINE_ID = 50;
 const MAX_REMARKS = 1000;
+
+/**
+ * Mirrors `MACHINE_LINE_ID_PATTERN` on the server: machines are stencilled on the
+ * floor as a five-letter section code, a hyphen, then a zero-padded three-digit unit
+ * number (LOOMA-004, WEAVE-112). Letting free text through turns "loom 4" and
+ * "LOOMA-004" into two different machines in every report that groups by this column.
+ */
+export const MACHINE_LINE_ID_PATTERN = /^[A-Z]{5}-\d{3}$/;
+
+/**
+ * Both the field hint and the error message, so what the supervisor is told BEFORE
+ * typing and what they are told after a mistake cannot drift apart.
+ */
+export const MACHINE_LINE_ID_FORMAT_HINT =
+  '5 letters, a hyphen, then 3 digits — e.g. LOOMA-004';
 
 /**
  * Mirrors the server's rules so the user never has to round-trip to learn about a
@@ -27,8 +41,19 @@ export const logInspectionSchema = z
     machineLineId: z
       .string()
       .trim()
+      // Upper-cased before the format check, not validated against it: a lowercase
+      // entry is unambiguous, so normalise it instead of making the supervisor
+      // retype it. The server normalises identically.
+      .toUpperCase()
+      // Empty is its own message -- "enter something" is more useful than the format
+      // rule when the field has simply not been filled in yet. No max() alongside the
+      // pattern: it fixes the length at 9, so a length message could only ever be
+      // noise competing with the one message that says how to fix the value.
       .min(1, 'Enter the machine or line ID')
-      .max(MAX_MACHINE_LINE_ID, `Keep this under ${MAX_MACHINE_LINE_ID} characters`),
+      .regex(
+        MACHINE_LINE_ID_PATTERN,
+        `That doesn't look like a machine or line ID. Use ${MACHINE_LINE_ID_FORMAT_HINT}.`,
+      ),
     defectType: z.enum([
       DefectType.WeaveDefect,
       DefectType.ShadeVariation,

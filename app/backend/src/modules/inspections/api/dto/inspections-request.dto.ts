@@ -11,12 +11,15 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
 import { IsCalendarDate } from '@shared/validators/is-calendar-date.validator';
 import { PaginationQueryDto } from '@shared/dto/pagination-query.dto';
 import {
+  MACHINE_LINE_ID_FORMAT_MESSAGE,
+  MACHINE_LINE_ID_PATTERN,
   MAX_MACHINE_LINE_ID_LENGTH,
   MAX_REMARKS_LENGTH,
   MAX_RESOLUTION_NOTE_LENGTH,
@@ -57,6 +60,14 @@ function toArray<T>(value: unknown): T[] | undefined {
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
+/**
+ * Trim AND upper-case, so `  looma-004 ` satisfies the format check and is stored in
+ * the one canonical form. Normalising what is unambiguous keeps the 400 reserved for
+ * input that is genuinely the wrong shape.
+ */
+const normalizeMachineLineId = ({ value }: { value: unknown }): unknown =>
+  typeof value === 'string' ? value.trim().toUpperCase() : value;
+
 export class CreateInspectionDto {
   @ApiProperty({
     format: 'uuid',
@@ -81,11 +92,18 @@ export class CreateInspectionDto {
   @IsISO8601({ strict: true })
   loggedAt: string;
 
-  @ApiProperty({ example: 'LOOM-04', maxLength: MAX_MACHINE_LINE_ID_LENGTH })
-  @Transform(trim)
+  @ApiProperty({
+    example: 'LOOMA-004',
+    pattern: MACHINE_LINE_ID_PATTERN.source,
+    description:
+      'Machine or line identifier: exactly 5 letters, a hyphen, then 3 digits. Trimmed and upper-cased before validation, so "  looma-004 " is accepted and stored as "LOOMA-004".',
+  })
+  @Transform(normalizeMachineLineId)
   @IsString()
   @IsNotEmpty()
-  @MaxLength(MAX_MACHINE_LINE_ID_LENGTH)
+  // No @MaxLength here on purpose: the pattern fixes the length at 9 characters, so a
+  // length validator could never fire and would only add a second message to the 400.
+  @Matches(MACHINE_LINE_ID_PATTERN, { message: MACHINE_LINE_ID_FORMAT_MESSAGE })
   machineLineId: string;
 
   @ApiProperty({ enum: DefectType, enumName: 'DefectType' })
@@ -160,7 +178,8 @@ export class InspectionFilterDto {
   plantId?: string;
 
   @ApiPropertyOptional({
-    description: 'Case-insensitive substring match on the machine/line id.',
+    description:
+      'Case-insensitive substring match on the machine/line id. Intentionally NOT held to the 5-letters-3-digits format that creates enforce -- a partial value like "LOOM" is the point of a search box.',
   })
   @Transform(trim)
   @IsOptional()

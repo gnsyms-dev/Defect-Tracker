@@ -16,7 +16,7 @@ function draft(clientUuid: string, loggedAt = '2026-09-01T10:00:00+05:30'): Draf
   return {
     clientUuid,
     inspectionDate: '2026-09-01',
-    machineLineId: 'LOOM-04',
+    machineLineId: 'LOOMA-004',
     defectType: DefectType.WeaveDefect,
     severity: Severity.Major,
     remarks: null,
@@ -58,7 +58,7 @@ function server(id: string, clientUuid: string): Inspection {
     id,
     clientUuid,
     inspectionDate: '2026-09-01',
-    machineLineId: 'LOOM-04',
+    machineLineId: 'LOOMA-004',
     defectType: DefectType.WeaveDefect,
     severity: Severity.Major,
     status: InspectionStatus.Open,

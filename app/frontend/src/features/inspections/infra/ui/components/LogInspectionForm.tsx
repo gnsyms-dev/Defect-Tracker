@@ -12,6 +12,7 @@ import {
   SEVERITY_SELECTED_CLASSES,
   type Severity,
 } from '../../../application/domain/Severity';
+import { MACHINE_LINE_ID_FORMAT_HINT } from '../../../application/validators/log-inspection.schema';
 import {
   useLogInspectionViewModel,
   type LogResultBanner,
@@ -74,7 +75,7 @@ export function LogInspectionForm({ onLogged }: LogInspectionFormProps) {
       <FormField
         id="machineLineId"
         label="Machine / Line ID"
-        hint="Free text — recent IDs are suggested as you type."
+        hint={`${MACHINE_LINE_ID_FORMAT_HINT}. Recent IDs are suggested as you type.`}
         error={errors.machineLineId?.message}
         isRequired
       >
@@ -88,7 +89,7 @@ export function LogInspectionForm({ onLogged }: LogInspectionFormProps) {
           autoCapitalize="characters"
           autoCorrect="off"
           spellCheck={false}
-          placeholder="LOOM-04"
+          placeholder="LOOMA-004"
         />
         <datalist id="recent-machine-ids">
           {vm.recentMachineIds.map((id) => (

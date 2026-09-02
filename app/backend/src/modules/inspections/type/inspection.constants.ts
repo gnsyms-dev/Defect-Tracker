@@ -23,3 +23,25 @@ export const MIN_RESOLUTION_NOTE_LENGTH = 5;
 export const MAX_RESOLUTION_NOTE_LENGTH = 1000;
 export const MAX_REMARKS_LENGTH = 1000;
 export const MAX_MACHINE_LINE_ID_LENGTH = 50;
+
+/**
+ * Machines and lines are stencilled on the floor as a five-letter section code, a
+ * hyphen, then a zero-padded three-digit unit number -- LOOMA-004, WEAVE-112. That
+ * exact shape is the only thing accepted for a NEW inspection.
+ *
+ * The point is not tidiness: `machine_line_id` is a free-text column that every
+ * report groups by, and "loom 4" / "Loom-04" / "LOOMA-4" silently become three
+ * different machines. No downstream grouping can undo that, so it is rejected at
+ * the edge instead. Input is trimmed and upper-cased first, which means a casing
+ * slip is normalised rather than turned into an error the supervisor has to fix.
+ *
+ * Because the pattern fixes the length at exactly 9 characters, it also subsumes
+ * MAX_MACHINE_LINE_ID_LENGTH on the create path -- that constant now only bounds the
+ * list FILTER, which is a substring search and deliberately NOT held to this format
+ * (a partial value like "LOOM" is the entire point of a search box).
+ */
+export const MACHINE_LINE_ID_PATTERN = /^[A-Z]{5}-\d{3}$/;
+
+/** Carries the expected shape, because a bare "invalid format" is not actionable. */
+export const MACHINE_LINE_ID_FORMAT_MESSAGE =
+  'machineLineId must be exactly 5 letters, a hyphen, then 3 digits (e.g. LOOMA-004)';

@@ -30,7 +30,7 @@ export class InspectionResponseDto {
   @ApiProperty({ example: '2026-09-01' })
   inspectionDate: string;
 
-  @ApiProperty({ example: 'LOOM-04' })
+  @ApiProperty({ example: 'LOOMA-004' })
   machineLineId: string;
 
   @ApiProperty({ enum: DefectType, enumName: 'DefectType' })

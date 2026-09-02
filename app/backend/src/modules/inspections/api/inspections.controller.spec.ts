@@ -32,7 +32,7 @@ const item: InspectionListItem = {
     'plant-1',
     'sup-1',
     '2026-09-01',
-    'LOOM-04',
+    'LOOMA-004',
     DefectType.WeaveDefect,
     Severity.Major,
     InspectionStatus.Open,
@@ -68,7 +68,7 @@ const createDto: CreateInspectionDto = {
   clientUuid: 'client-1',
   inspectionDate: '2026-09-01',
   loggedAt: '2026-09-01T14:32:10+05:30',
-  machineLineId: 'LOOM-04',
+  machineLineId: 'LOOMA-004',
   defectType: DefectType.WeaveDefect,
   severity: Severity.Major,
 };

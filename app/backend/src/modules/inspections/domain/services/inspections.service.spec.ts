@@ -64,7 +64,7 @@ function buildInspection(
     overrides.plantId ?? PLANT_A,
     overrides.loggedByUserId ?? 'sup-1',
     '2026-09-01',
-    'LOOM-04',
+    'LOOMA-004',
     DefectType.WeaveDefect,
     overrides.severity ?? Severity.Major,
     overrides.status ?? InspectionStatus.Open,
@@ -89,7 +89,7 @@ function validInput(overrides: Record<string, unknown> = {}) {
   return {
     clientUuid: 'client-uuid-1',
     inspectionDate: TODAY,
-    machineLineId: '  LOOM-04  ',
+    machineLineId: '  LOOMA-004  ',
     defectType: DefectType.WeaveDefect,
     severity: Severity.Major,
     remarks: null as string | null,
@@ -229,7 +229,7 @@ describe('InspectionsService', () => {
     it('trims the machine/line id', async () => {
       await inspectionsService.log(supervisor, validInput());
       const [data] = repository.createIfAbsent.mock.calls[0];
-      expect(data.machineLineId).toBe('LOOM-04');
+      expect(data.machineLineId).toBe('LOOMA-004');
     });
 
     it('surfaces a replay as wasCreated: false', async () => {

@@ -15,7 +15,7 @@ function input(overrides: Partial<{ clientUuid: string; userId: string }> = {}) 
     clientUuid: overrides.clientUuid ?? 'client-1',
     userId: overrides.userId ?? 'sup-1',
     kind: 'createInspection',
-    payload: { machineLineId: 'LOOM-04' },
+    payload: { machineLineId: 'LOOMA-004' },
   };
 }
 
