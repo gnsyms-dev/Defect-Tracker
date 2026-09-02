@@ -41,6 +41,7 @@ On the Log Defect form, the date picker and the defect type dropdown appear offs
 - **A Supervisor is mapped to exactly one plant.** They see and act on that plant's data only.
 - **A QA Manager has access to all plants.** No per-plant mapping is needed for them.
 - **RBAC, not ABAC.** Because the role boundary is clean and permissions follow the role (not per-record attributes), a role check plus a plant scope is enough. ABAC's policy engine would be cost without benefit here.
+- **Machine line IDs follow a fixed format - 5 letters, a hyphen, then 3 digits** (e.g. `LOOMA-004`). This is enforced as the field is a free-text, so the shape can be enforced.
 
 ## Decisions
 
