@@ -8,23 +8,10 @@
 cp .env.example .env
 ```
 
-Then set `JWT_SECRET` in `.env` (required, min 32 chars - the app won't boot without it):
-
-```bash
-openssl rand -hex 32
-```
-
 **2. Start the containers**
 
 ```bash
 docker compose up --build -d
-```
-
-**3. Run migrations and seed data**
-
-```bash
-docker compose exec backend npm run migrate:up
-docker compose exec backend npm run seed:up
 ```
 
 ### URLs
@@ -32,7 +19,6 @@ docker compose exec backend npm run seed:up
 | Service | URL |
 | --- | --- |
 | Frontend | http://localhost:5173 |
-| Backend API | http://localhost:5000/api/v1 |
 | Swagger docs | http://localhost:5000/api/docs |
 
 ### Login Credentials
@@ -42,6 +28,10 @@ docker compose exec backend npm run seed:up
 | supervisor@example.com | `Passw0rd!` | Supervisor |
 | supervisor2@example.com | `Passw0rd!` | Supervisor |
 | qa@example.com | `Passw0rd!` | QA Manager |
+
+### Note on Chrome's mobile view
+
+On the Log Defect form, the date picker and the defect type dropdown appear offset from the field when opened in Chrome DevTools' device toolbar. **This is not a bug in the app.** Both are native OS controls (`<input type="date">` and `<select>`), which Chrome renders against the real desktop window rather than the emulated phone viewport. On an actual phone they open in the right place.
 
 ## Assumptions
 
